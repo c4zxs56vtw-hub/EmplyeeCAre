@@ -1,0 +1,749 @@
+openapi: 3.0.3
+info:
+  title: EmployeeCare — API d'Authentification et de Gestion des Accès (RBAC)
+  description: |
+    Contrat d'interface REST (OpenAPI 3.0) pour l'application **EmployeeCare — Votre espace de dialogue**.
+    Ce contrat définit les endpoints d'authentification unique, la gestion de session, le contrôle d'accès basé sur les rôles (`EMPLOYE`, `RESPONSABLE`, `ADMINISTRATEUR`) ainsi que les opérations d'administration des comptes.
+
+    ### Règles métier fondamentales :
+    - **Point d'entrée unique** : Aucun auto-enregistrement (`/register`) n'est autorisé. Seul un `ADMINISTRATEUR` peut créer des comptes.
+    - **Cumul des rôles** : Un `RESPONSABLE` possède toujours les rôles `["RESPONSABLE", "EMPLOYE"]` afin de pouvoir basculer vers son espace employé personnel.
+    - **Cloisonnement de la confidentialité** : Un `ADMINISTRATEUR` supervise la plateforme mais n'accède pas au contenu détaillé des dossiers confidentiels s'il n'est pas explicitement habilité (`isConfidentialHab: true`).
+    - **Révocation immédiate** : Tout compte avec le statut `DESACTIVE` se voit refuser la connexion (`403 ACCOUNT_DEACTIVATED`) et toute session active est invalidée.
+  version: 1.0.0
+  contact:
+    name: Architecture EmployeeCare
+    email: support-technique@entreprise.com
+
+servers:
+  - url: http://localhost:8080/api
+    description: Serveur Backend Spring Boot (Développement)
+  - url: https://api.employeecare.entreprise.com/api
+    description: Serveur de Production
+
+tags:
+  - name: Authentification
+    description: Connexion unique, vérification de session, déconnexion et activation initiale de compte
+  - name: Espace Employé
+    description: Opérations réservées aux utilisateurs possédant le rôle EMPLOYE
+  - name: Espace Responsable
+    description: Opérations réservées aux utilisateurs possédant le rôle RESPONSABLE
+  - name: Espace Administrateur
+    description: Gestion des comptes, rôles, départements, catégories et supervision globale (rôle ADMINISTRATEUR)
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Authentification
+      summary: Authentifier un utilisateur (Point d'entrée unique)
+      description: |
+        Vérifie les identifiants professionnels, contrôle que le compte est `ACTIF`, détermine les rôles vérifiés côté serveur et calcule la route de redirection par défaut (`/admin`, `/responsable` ou `/employe`).
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              employe:
+                summary: Connexion Employé
+                value:
+                  email: paul.martin@entreprise.com
+                  password: Employe2026!
+              responsable:
+                summary: Connexion Responsable
+                value:
+                  email: sophie.dubois@entreprise.com
+                  password: Resp2026!
+              administrateur:
+                summary: Connexion Administrateur
+                value:
+                  email: admin@entreprise.com
+                  password: Admin2026!
+      responses:
+        '200':
+          description: Authentification réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: Champs manquants ou format d'email invalide (`EMPTY_FIELDS` | `INVALID_EMAIL`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              examples:
+                emptyFields:
+                  value:
+                    success: false
+                    errorCode: EMPTY_FIELDS
+                    errorMessage: Veuillez renseigner votre adresse email et votre mot de passe.
+                invalidEmail:
+                  value:
+                    success: false
+                    errorCode: INVALID_EMAIL
+                    errorMessage: Veuillez saisir une adresse email valide.
+        '401':
+          description: Identifiants incorrects (`INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              example:
+                success: false
+                errorCode: INVALID_CREDENTIALS
+                errorMessage: Adresse email ou mot de passe incorrect.
+        '403':
+          description: Compte désactivé par l'administrateur (`ACCOUNT_DEACTIVATED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              example:
+                success: false
+                errorCode: ACCOUNT_DEACTIVATED
+                errorMessage: Ce compte a été désactivé. Veuillez contacter l'administrateur de votre entreprise.
+        '500':
+          description: Erreur interne du serveur (`SERVER_ERROR`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              example:
+                success: false
+                errorCode: SERVER_ERROR
+                errorMessage: Impossible de se connecter pour le moment. Veuillez réessayer.
+
+  /auth/me:
+    get:
+      tags:
+        - Authentification
+      summary: Vérifier et synchroniser la session active
+      description: |
+        Appelé au chargement de l'application et lors de la navigation pour vérifier que le jeton JWT est valide, que le compte n'a pas été désactivé en cours de session, et synchroniser les rôles en temps réel.
+      operationId: verifyCurrentSession
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session valide et profil synchronisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionVerifyResponse'
+        '401':
+          description: Session expirée ou jeton invalide (`SESSION_EXPIRED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              example:
+                success: false
+                errorCode: SESSION_EXPIRED
+                errorMessage: Votre session a expiré. Veuillez vous reconnecter.
+        '403':
+          description: Compte désactivé en cours de session (`ACCOUNT_DEACTIVATED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              example:
+                success: false
+                errorCode: ACCOUNT_DEACTIVATED
+                errorMessage: Ce compte a été désactivé. Veuillez contacter l'administrateur de votre entreprise.
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentification
+      summary: Déconnecter l'utilisateur et révoquer la session
+      operationId: logoutUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Déconnexion effectuée avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+
+  /auth/forgot-password:
+    post:
+      tags:
+        - Authentification
+      summary: Demander une réinitialisation de mot de passe
+      description: |
+        Retourne toujours `200 OK` même si l'adresse email n'existe pas, afin d'empêcher l'énumération des comptes de l'entreprise.
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: paul.martin@entreprise.com
+      responses:
+        '200':
+          description: Demande prise en compte
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - message
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Si un compte actif est associé à cette adresse, les instructions de réinitialisation ont été envoyées.
+
+  /auth/activate-account:
+    post:
+      tags:
+        - Authentification
+      summary: Activer un compte créé par l'administrateur
+      description: |
+        Permet à un collaborateur dont le compte est `EN_ATTENTE_ACTIVATION` de définir son mot de passe personnel via son jeton d'invitation initial.
+      operationId: activateAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateAccountRequest'
+      responses:
+        '200':
+          description: Compte activé et session ouverte
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: Jeton d'invitation invalide ou expiré
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+
+  /employe/tickets:
+    get:
+      tags:
+        - Espace Employé
+      summary: Lister les signalements personnels de l'employé connecté
+      description: |
+        Exige le rôle `EMPLOYE`. Filtre strictement les dossiers où `employeeId == session.employeeId`.
+        Accessible également à un `RESPONSABLE` lorsqu'il consulte son espace Employé personnel.
+      operationId: getMyEmployeeTickets
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des signalements personnels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketSummary'
+        '403':
+          description: Rôle `EMPLOYE` requis
+
+  /responsable/tickets:
+    get:
+      tags:
+        - Espace Responsable
+      summary: Lister les signalements attribués au périmètre du responsable
+      description: |
+        Exige le rôle `RESPONSABLE`. Retourne les signalements du département ou des catégories prises en charge par le responsable connecté.
+        Les signalements sensibles/confidentiels ne sont retournés que si `isConfidentialHab == true`.
+      operationId: getResponsableTickets
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des signalements du périmètre responsable
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketSummary'
+        '403':
+          description: Rôle `RESPONSABLE` requis
+
+  /admin/employees:
+    get:
+      tags:
+        - Espace Administrateur
+      summary: Lister tous les collaborateurs
+      description: Exige le rôle `ADMINISTRATEUR`.
+      operationId: listEmployees
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste complète des comptes collaborateurs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EmployeeAccount'
+        '403':
+          description: Rôle `ADMINISTRATEUR` requis
+    post:
+      tags:
+        - Espace Administrateur
+      summary: Créer un nouveau compte collaborateur (Employé ou Responsable)
+      description: |
+        Seul point de création de compte de la plateforme. Génère un compte avec le statut `EN_ATTENTE_ACTIVATION` (ou `ACTIF`) et prépare l'invitation d'activation.
+      operationId: createEmployeeAccount
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmployeeRequest'
+      responses:
+        '201':
+          description: Compte collaborateur créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAccount'
+        '403':
+          description: Rôle `ADMINISTRATEUR` requis
+
+  /admin/employees/{employeeId}/status:
+    patch:
+      tags:
+        - Espace Administrateur
+      summary: Activer ou désactiver un compte utilisateur
+      description: |
+        Exige le rôle `ADMINISTRATEUR`. Lorsqu'un compte passe à `DESACTIVE`, toute tentative de connexion renvoie `403 ACCOUNT_DEACTIVATED` et ses sessions actives sont révoquées.
+      operationId: updateEmployeeStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: emp-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  $ref: '#/components/schemas/AccountStatus'
+      responses:
+        '200':
+          description: Statut du compte mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAccount'
+        '403':
+          description: Rôle `ADMINISTRATEUR` requis
+
+  /admin/employees/{employeeId}/role:
+    patch:
+      tags:
+        - Espace Administrateur
+      summary: Promouvoir un employé en Responsable ou retirer ses responsabilités
+      description: |
+        Exige le rôle `ADMINISTRATEUR`.
+        - Promotion : attribue `["EMPLOYE", "RESPONSABLE"]` et crée/active l'entrée `ResponsableAccount`.
+        - Retrait : conserve le compte actif avec le rôle `["EMPLOYE"]` et désactive le périmètre `ResponsableAccount`.
+      operationId: updateEmployeeRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '200':
+          description: Rôles et responsabilités mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAccount'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Jeton JWT signé par le backend Spring Security (`Authorization: Bearer <token>`)"
+
+  schemas:
+    UserRole:
+      type: string
+      enum:
+        - EMPLOYE
+        - RESPONSABLE
+        - ADMINISTRATEUR
+      description: Rôle vérifié par le serveur
+
+    AccountStatus:
+      type: string
+      enum:
+        - ACTIF
+        - EN_ATTENTE_ACTIVATION
+        - DESACTIVE
+      description: Statut du compte utilisateur
+
+    AuthErrorCode:
+      type: string
+      enum:
+        - EMPTY_FIELDS
+        - INVALID_EMAIL
+        - INVALID_CREDENTIALS
+        - ACCOUNT_DEACTIVATED
+        - SESSION_EXPIRED
+        - SERVER_ERROR
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: sophie.dubois@entreprise.com
+        password:
+          type: string
+          format: password
+          example: Resp2026!
+
+    ActivateAccountRequest:
+      type: object
+      required:
+        - invitationToken
+        - newPassword
+      properties:
+        invitationToken:
+          type: string
+          example: inv_9f8a7b6c5d4e3f2a1b
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          example: MonMotDePasseSecurise2026!
+
+    AuthSession:
+      type: object
+      required:
+        - userId
+        - fullName
+        - email
+        - roles
+        - roleLabel
+        - issuedAt
+        - expiresAt
+      properties:
+        userId:
+          type: string
+          example: usr-resp-01
+        employeeId:
+          type: string
+          nullable: true
+          example: emp-002
+        responsableId:
+          type: string
+          nullable: true
+          example: resp-sophie
+        fullName:
+          type: string
+          example: Sophie Dubois
+        email:
+          type: string
+          format: email
+          example: sophie.dubois@entreprise.com
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+          example:
+            - RESPONSABLE
+            - EMPLOYE
+        roleLabel:
+          type: string
+          example: Responsable Informatique
+        departmentName:
+          type: string
+          nullable: true
+          example: Pôle Informatique et Infrastructure
+        issuedAt:
+          type: integer
+          format: int64
+          description: Timestamp Epoch en millisecondes de création de session
+          example: 1761480000000
+        expiresAt:
+          type: integer
+          format: int64
+          description: Timestamp Epoch en millisecondes d'expiration de session
+          example: 1761508800000
+
+    LoginSuccessResponse:
+      type: object
+      required:
+        - success
+        - token
+        - redirectPath
+        - session
+      properties:
+        success:
+          type: boolean
+          example: true
+        token:
+          type: string
+          description: Jeton d'accès JWT
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        redirectPath:
+          type: string
+          enum:
+            - /employe
+            - /responsable
+            - /admin
+          example: /responsable
+        session:
+          $ref: '#/components/schemas/AuthSession'
+
+    SessionVerifyResponse:
+      type: object
+      required:
+        - valid
+        - session
+      properties:
+        valid:
+          type: boolean
+          example: true
+        session:
+          $ref: '#/components/schemas/AuthSession'
+
+    AuthErrorResponse:
+      type: object
+      required:
+        - success
+        - errorCode
+        - errorMessage
+      properties:
+        success:
+          type: boolean
+          example: false
+        errorCode:
+          $ref: '#/components/schemas/AuthErrorCode'
+        errorMessage:
+          type: string
+          example: Adresse email ou mot de passe incorrect.
+
+    EmployeeAccount:
+      type: object
+      required:
+        - id
+        - matricule
+        - firstName
+        - lastName
+        - fullName
+        - email
+        - departmentId
+        - departmentName
+        - position
+        - roles
+        - primaryRoleLabel
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          example: emp-001
+        matricule:
+          type: string
+          example: EC-2026-001
+        firstName:
+          type: string
+          example: Paul
+        lastName:
+          type: string
+          example: Martin
+        fullName:
+          type: string
+          example: Paul Martin
+        email:
+          type: string
+          format: email
+          example: paul.martin@entreprise.com
+        phone:
+          type: string
+          example: "+33 1 42 68 55 01"
+        departmentId:
+          type: string
+          example: dept-fin
+        departmentName:
+          type: string
+          example: Comptabilité et Finances
+        position:
+          type: string
+          example: Comptable Général
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+        primaryRoleLabel:
+          type: string
+          enum:
+            - Employé
+            - Responsable
+            - Administrateur
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        createdAt:
+          type: string
+          example: "12/01/2026"
+
+    CreateEmployeeRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - departmentId
+        - position
+        - role
+      properties:
+        firstName:
+          type: string
+          example: Claire
+        lastName:
+          type: string
+          example: Moreau
+        email:
+          type: string
+          format: email
+          example: claire.moreau@entreprise.com
+        phone:
+          type: string
+          example: "+33 1 42 68 55 99"
+        departmentId:
+          type: string
+          example: dept-rh
+        position:
+          type: string
+          example: Chargée de développement RH
+        role:
+          $ref: '#/components/schemas/UserRole'
+        assignedCategories:
+          type: array
+          description: Catégories attribuées si le rôle choisi est RESPONSABLE
+          items:
+            type: string
+        isConfidentialHab:
+          type: boolean
+          default: false
+          description: Habilitation au traitement des dossiers confidentiels
+
+    UpdateRoleRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - PROMOTE_TO_RESPONSABLE
+            - REVOKE_RESPONSABLE
+        departmentId:
+          type: string
+        assignedCategories:
+          type: array
+          items:
+            type: string
+        isConfidentialHab:
+          type: boolean
+
+    TicketSummary:
+      type: object
+      required:
+        - id
+        - reference
+        - title
+        - category
+        - priority
+        - status
+        - isConfidential
+        - createdAt
+      properties:
+        id:
+          type: string
+          example: tkt-101
+        reference:
+          type: string
+          example: SIG-2026-0101
+        title:
+          type: string
+          example: Dysfonctionnement accès VPN
+        category:
+          type: string
+          example: Informatique & Équipement
+        priority:
+          type: string
+          enum:
+            - FAIBLE
+            - MOYENNE
+            - HAUTE
+            - CRITIQUE
+        status:
+          type: string
+          enum:
+            - EN_ATTENTE
+            - DIAGNOSTIC_EN_COURS
+            - ATTENTE_VALIDATION
+            - RESOLU
+            - CLOTURE
+            - ROUVERT
+        isConfidential:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          example: "24/10/2026"
