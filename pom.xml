@@ -1,68 +1,176 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
+
+    <!-- ========================================= -->
+    <!-- 1. SPRING BOOT                            -->
+    <!-- ========================================= -->
+
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>4.1.2</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
+
+    <!-- ========================================= -->
+    <!-- 2. INFORMATIONS DU PROJET                 -->
+    <!-- ========================================= -->
+
     <groupId>com.employeecare</groupId>
     <artifactId>EmployeeCare-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+
     <name>EmployeeCare API</name>
-    <description>EmployeeCare API</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+    <description>
+        Backend REST de la plateforme EmployeeCare
+    </description>
+
+    <!-- ========================================= -->
+    <!-- 3. PROPRIETES                            -->
+    <!-- ========================================= -->
+
     <properties>
+
         <java.version>17</java.version>
+
         <mapstruct.version>1.6.3</mapstruct.version>
+
     </properties>
+
+    <!-- ========================================= -->
+    <!-- 4. DEPENDANCES                           -->
+    <!-- ========================================= -->
+
     <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-flyway</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-mail</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
+
+        <!-- ===================================== -->
+        <!-- SPRING WEB MVC                        -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- SPRING DATA JPA                       -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- VALIDATION                            -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- SPRING SECURITY                       -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- JWT / OAUTH2 RESOURCE SERVER          -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- EMAIL                                 -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- FLYWAY                                -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- POSTGRESQL                            -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- LOMBOK                                -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- MAPSTRUCT                             -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- OPENAPI / SWAGGER ANNOTATIONS         -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+            <version>2.2.55</version>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- SPRING BOOT DEVTOOLS                  -->
+        <!-- ===================================== -->
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -70,76 +178,112 @@
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <!-- MapStruct -->
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
-            <version>${mapstruct.version}</version>
-        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS JPA                             -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS FLYWAY                          -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS EMAIL                           -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security-oauth2-resource-server-test</artifactId>
-            <scope>test</scope>
-        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS SECURITY                        -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS OAUTH2                          -->
+        <!-- ===================================== -->
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS VALIDATION                      -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+
+        <!-- ===================================== -->
+        <!-- TESTS WEB MVC                         -->
+        <!-- ===================================== -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Annotations OpenAPI / Swagger -->
-        <dependency>
-            <groupId>io.swagger.core.v3</groupId>
-            <artifactId>swagger-annotations-jakarta</artifactId>
-            <version>2.2.55</version>
-        </dependency>
     </dependencies>
 
+
+    <!-- ========================================= -->
+    <!-- 5. CONFIGURATION MAVEN                   -->
+    <!-- ========================================= -->
+
     <build>
+
         <plugins>
+
+            <!-- ================================= -->
+            <!-- OPENAPI GENERATOR                 -->
+            <!-- ================================= -->
+
             <plugin>
+
                 <groupId>org.openapitools</groupId>
                 <artifactId>openapi-generator-maven-plugin</artifactId>
                 <version>7.26.0</version>
 
                 <executions>
+
                     <execution>
+
                         <id>generate-api</id>
+
+                        <phase>generate-sources</phase>
 
                         <goals>
                             <goal>generate</goal>
@@ -147,23 +291,40 @@
 
                         <configuration>
 
+                            <!-- Contrat OpenAPI -->
+
                             <inputSpec>
                                 ${project.basedir}/src/main/resources/openapi/employeecare.yaml
                             </inputSpec>
 
+
+                            <!-- Generateur Spring -->
+
                             <generatorName>spring</generatorName>
+
+
+                            <!-- Dossier de generation -->
 
                             <output>
                                 ${project.build.directory}/generated-sources/openapi
                             </output>
 
+
+                            <!-- Package des interfaces API -->
+
                             <apiPackage>
                                 com.employeecare.api.generated.apis
                             </apiPackage>
 
+
+                            <!-- Package des DTO -->
+
                             <modelPackage>
                                 com.employeecare.api.generated.models
                             </modelPackage>
+
+
+                            <!-- Options du generateur -->
 
                             <configOptions>
 
@@ -182,30 +343,48 @@
                             </configOptions>
 
                         </configuration>
+
                     </execution>
+
                 </executions>
+
             </plugin>
+
+
+            <!-- ================================= -->
+            <!-- MAVEN COMPILER                    -->
+            <!-- LOMBOK + MAPSTRUCT                -->
+            <!-- ================================= -->
+
             <plugin>
+
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
 
                 <configuration>
+
                     <annotationProcessorPaths>
 
                         <!-- Lombok -->
+
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
                         </path>
 
-                        <!-- MapStruct -->
+
+                        <!-- MapStruct Processor -->
+
                         <path>
                             <groupId>org.mapstruct</groupId>
                             <artifactId>mapstruct-processor</artifactId>
                             <version>${mapstruct.version}</version>
                         </path>
 
-                        <!-- Compatibilité Lombok / MapStruct -->
+
+                        <!-- Integration Lombok / MapStruct -->
+
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok-mapstruct-binding</artifactId>
@@ -213,45 +392,38 @@
                         </path>
 
                     </annotationProcessorPaths>
+
                 </configuration>
+
             </plugin>
+
+
+            <!-- ================================= -->
+            <!-- SPRING BOOT MAVEN PLUGIN          -->
+            <!-- ================================= -->
+
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-compile</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                        <configuration>
-                            <annotationProcessorPaths>
-                                <path>
-                                    <groupId>org.projectlombok</groupId>
-                                    <artifactId>lombok</artifactId>
-                                </path>
-                            </annotationProcessorPaths>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>default-testCompile</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>testCompile</goal>
-                        </goals>
-                        <configuration>
-                            <annotationProcessorPaths>
-                                <path>
-                                    <groupId>org.projectlombok</groupId>
-                                    <artifactId>lombok</artifactId>
-                                </path>
-                            </annotationProcessorPaths>
-                        </configuration>
-                    </execution>
-                </executions>
+
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+
+                <configuration>
+
+                    <excludes>
+
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+
+                    </excludes>
+
+                </configuration>
+
             </plugin>
+
         </plugins>
+
     </build>
 
 </project>

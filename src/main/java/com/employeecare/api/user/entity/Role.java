@@ -18,6 +18,6 @@ public class Role {
     @Column(name = "code", nullable = false,length = 30)
     private String code;
 
-    @Column(name = "descrption",length = 255)
+    @Column(name = "description",length = 255)
     private String description;
 }
