@@ -46,10 +46,14 @@ public class AuthenticationExceptionHandler {
             IllegalArgumentException exception
     ) {
 
+        String message = (exception.getMessage() != null && !exception.getMessage().isBlank())
+                ? exception.getMessage()
+                : "Veuillez renseigner votre adresse email et votre mot de passe.";
+
         return buildError(
                 HttpStatus.BAD_REQUEST,
                 AuthErrorCode.EMPTY_FIELDS,
-                "Veuillez renseigner votre adresse email et votre mot de passe."
+                message
         );
     }
 
