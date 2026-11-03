@@ -17,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 public class EmployeeAdminController implements EspaceAdministrateurApi {
 
@@ -26,6 +28,15 @@ public class EmployeeAdminController implements EspaceAdministrateurApi {
             AdminEmployeeApplicationService adminEmployeeService
     ) {
         this.adminEmployeeService = adminEmployeeService;
+    }
+    @Override
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    public ResponseEntity<List<EmployeeAccount>> listEmployees() {
+
+        List<EmployeeAccount> employees =
+                adminEmployeeService.listEmployees();
+
+        return ResponseEntity.ok(employees);
     }
 
     @Override

@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
@@ -27,6 +29,20 @@ class EmployeeAdminControllerTest {
 
     @InjectMocks
     private EmployeeAdminController controller;
+
+    @Test
+    void listEmployees_retourne200AvecLaListeDesEmployes() {
+
+        List<EmployeeAccount> expected = List.of(new EmployeeAccount());
+        when(adminEmployeeService.listEmployees()).thenReturn(expected);
+
+        ResponseEntity<List<EmployeeAccount>> response =
+                controller.listEmployees();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(expected);
+        verify(adminEmployeeService).listEmployees();
+    }
 
     @Test
     void createEmployeeAccount_retourne201AvecLeCompteCree() {

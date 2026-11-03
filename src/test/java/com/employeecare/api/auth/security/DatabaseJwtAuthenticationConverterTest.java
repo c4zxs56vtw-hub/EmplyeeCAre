@@ -1,5 +1,6 @@
 package com.employeecare.api.auth.security;
 
+import com.employeecare.api.auth.service.JwtRevocationService;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
 import com.employeecare.api.user.entity.Role;
@@ -34,11 +35,28 @@ class DatabaseJwtAuthenticationConverterTest {
     @Mock
     private AppUserRepository appUserRepository;
 
+    @Mock
+    private JwtRevocationService jwtRevocationService;
+
     private DatabaseJwtAuthenticationConverter converter;
 
     @BeforeEach
     void setUp() {
-        converter = new DatabaseJwtAuthenticationConverter(appUserRepository);
+        converter = new DatabaseJwtAuthenticationConverter(appUserRepository, jwtRevocationService);
+    }
+
+    @Test
+    void convert_jetonRevoque_leveInvalidBearerToken() {
+
+        UUID userId = UUID.randomUUID();
+        Jwt jwt = jwt(userId.toString());
+
+        when(jwtRevocationService.isRevoked(jwt)).thenReturn(true);
+
+        assertThatThrownBy(() -> converter.convert(jwt))
+                .isInstanceOf(InvalidBearerTokenException.class);
+
+        verify(appUserRepository, never()).findByIdWithRoles(any());
     }
 
     @Test

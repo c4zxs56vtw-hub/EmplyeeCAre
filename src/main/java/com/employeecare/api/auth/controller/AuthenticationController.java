@@ -3,12 +3,14 @@ package com.employeecare.api.auth.controller;
 import com.employeecare.api.auth.service.AccountActivationService;
 import com.employeecare.api.auth.service.AuthenticationService;
 import com.employeecare.api.auth.service.CurrentSessionService;
+import com.employeecare.api.auth.service.JwtRevocationService;
 
 import com.employeecare.api.generated.apis.AuthentificationApi;
 
 import com.employeecare.api.generated.models.ActivateAccountRequest;
 import com.employeecare.api.generated.models.LoginRequest;
 import com.employeecare.api.generated.models.LoginSuccessResponse;
+import com.employeecare.api.generated.models.LogoutUser200Response;
 import com.employeecare.api.generated.models.SessionVerifyResponse;
 
 import com.employeecare.api.user.entity.AppUser;
@@ -37,16 +39,20 @@ public class AuthenticationController implements AuthentificationApi {
 
     private final CurrentSessionService currentSessionService;
 
+    private final JwtRevocationService jwtRevocationService;
+
     public AuthenticationController(
             AuthenticationService authenticationService,
             AccountActivationService accountActivationService,
             AppUserRepository appUserRepository,
-            CurrentSessionService currentSessionService
+            CurrentSessionService currentSessionService,
+            JwtRevocationService jwtRevocationService
     ) {
         this.authenticationService = authenticationService;
         this.accountActivationService = accountActivationService;
         this.appUserRepository = appUserRepository;
         this.currentSessionService = currentSessionService;
+        this.jwtRevocationService = jwtRevocationService;
     }
 
     @Override
@@ -85,6 +91,41 @@ public class AuthenticationController implements AuthentificationApi {
                 currentSessionService.verifySession(
                         jwtAuth.getToken()
                 );
+
+        return ResponseEntity.ok(response);
+    }
+
+    @Override
+    public ResponseEntity<LogoutUser200Response> logoutUser() {
+
+        // 1. Récupérer l'utilisateur authentifié
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        // 2. Vérifier la présence d'un JWT valide
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Aucune session active."
+            );
+        }
+
+        // 3. Révoquer le JWT dans PostgreSQL
+
+        jwtRevocationService.revokeToken(
+                jwtAuth.getToken()
+        );
+
+        // 4. Construire la réponse
+
+        LogoutUser200Response response =
+                new LogoutUser200Response();
+
+        response.setSuccess(true);
 
         return ResponseEntity.ok(response);
     }

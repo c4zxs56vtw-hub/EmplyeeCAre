@@ -3,9 +3,11 @@ package com.employeecare.api.auth.controller;
 import com.employeecare.api.auth.service.AccountActivationService;
 import com.employeecare.api.auth.service.AuthenticationService;
 import com.employeecare.api.auth.service.CurrentSessionService;
+import com.employeecare.api.auth.service.JwtRevocationService;
 import com.employeecare.api.generated.models.ActivateAccountRequest;
 import com.employeecare.api.generated.models.LoginRequest;
 import com.employeecare.api.generated.models.LoginSuccessResponse;
+import com.employeecare.api.generated.models.LogoutUser200Response;
 import com.employeecare.api.generated.models.SessionVerifyResponse;
 import com.employeecare.api.user.entity.AppUser;
 import com.employeecare.api.user.repository.AppUserRepository;
@@ -52,6 +54,9 @@ class AuthenticationControllerTest {
     @Mock
     private CurrentSessionService currentSessionService;
 
+    @Mock
+    private JwtRevocationService jwtRevocationService;
+
     private AuthenticationController controller;
 
     @BeforeEach
@@ -61,7 +66,8 @@ class AuthenticationControllerTest {
                 authenticationService,
                 accountActivationService,
                 appUserRepository,
-                currentSessionService
+                currentSessionService,
+                jwtRevocationService
         );
     }
 
@@ -118,6 +124,34 @@ class AuthenticationControllerTest {
                 .hasMessageContaining("Aucune session JWT valide.");
 
         verify(currentSessionService, never()).verifySession(any());
+    }
+
+    @Test
+    void logoutUser_avecAuthentificationJwt_revoqueJetonEtRetourne200Ok() {
+
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken authentication =
+                new JwtAuthenticationToken(jwt, Collections.emptyList(), "user-id");
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        ResponseEntity<LogoutUser200Response> response = controller.logoutUser();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getSuccess()).isTrue();
+        verify(jwtRevocationService).revokeToken(jwt);
+    }
+
+    @Test
+    void logoutUser_sansAuthentificationJwt_leveAuthenticationCredentialsNotFoundException() {
+
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> controller.logoutUser())
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class)
+                .hasMessageContaining("Aucune session active.");
+
+        verify(jwtRevocationService, never()).revokeToken(any());
     }
 
     @Test
