@@ -77,6 +77,9 @@ public class AppUser {
     private AccountStatus status =
             AccountStatus.EN_ATTENTE_ACTIVATION;
 
+    @Column(name = "session_version", nullable = false)
+    private long sessionVersion = 0L;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id")
     private Department department;

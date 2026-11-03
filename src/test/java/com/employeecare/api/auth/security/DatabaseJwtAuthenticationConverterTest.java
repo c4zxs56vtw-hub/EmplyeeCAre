@@ -79,6 +79,33 @@ class DatabaseJwtAuthenticationConverterTest {
     }
 
     @Test
+    void convert_sessionVersionDifferente_leveInvalidBearerToken() {
+
+        UUID userId = UUID.randomUUID();
+        AppUser user = user(userId, AccountStatus.ACTIF, "EMPLOYE");
+        user.setSessionVersion(2L);
+
+        when(appUserRepository.findByIdWithRoles(userId))
+                .thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> converter.convert(jwt(userId.toString(), 1L)))
+                .isInstanceOf(InvalidBearerTokenException.class);
+    }
+
+    @Test
+    void convert_sessionVersionAbsente_leveInvalidBearerToken() {
+
+        UUID userId = UUID.randomUUID();
+        AppUser user = user(userId, AccountStatus.ACTIF, "EMPLOYE");
+
+        when(appUserRepository.findByIdWithRoles(userId))
+                .thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> converter.convert(jwt(userId.toString(), null)))
+                .isInstanceOf(InvalidBearerTokenException.class);
+    }
+
+    @Test
     void convert_subjectNonUuid_leveInvalidBearerToken() {
 
         assertThatThrownBy(() -> converter.convert(jwt("pas-un-uuid")))
@@ -145,10 +172,19 @@ class DatabaseJwtAuthenticationConverterTest {
     // ===== Utilitaires =====
 
     private static Jwt jwt(String subject) {
-        return Jwt.withTokenValue("token")
+        return jwt(subject, 0L);
+    }
+
+    private static Jwt jwt(String subject, Long sessionVersion) {
+        Jwt.Builder builder = Jwt.withTokenValue("token")
                 .header("alg", "HS256")
-                .subject(subject)
-                .build();
+                .subject(subject);
+
+        if (sessionVersion != null) {
+            builder.claim("session_version", sessionVersion);
+        }
+
+        return builder.build();
     }
 
     private static AppUser user(UUID id, AccountStatus status, String... roleCodes) {
@@ -156,6 +192,7 @@ class DatabaseJwtAuthenticationConverterTest {
         AppUser user = new AppUser();
         user.setId(id);
         user.setStatus(status);
+        user.setSessionVersion(0L);
 
         Set<Role> roles = new java.util.HashSet<>();
         for (String code : roleCodes) {

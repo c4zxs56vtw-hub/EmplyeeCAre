@@ -26,16 +26,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Teste JwtService avec un véritable encodeur / décodeur HS256
- * (aucun mock) afin de vérifier le contenu réel du JWT signé.
- */
 class JwtServiceTest {
 
-    private static final String ISSUER = "http://localhost:9090/api";
+    private static final String SECRET_STRING =
+            "cle-secrete-pour-les-tests-unitaires-de-32-octets-au-moins!";
+
+    private static final String ISSUER = "http://localhost:8080/api";
 
     private final SecretKey key = new SecretKeySpec(
-            "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8),
+            SECRET_STRING.getBytes(StandardCharsets.UTF_8),
             "HmacSHA256"
     );
 
@@ -76,6 +75,8 @@ class JwtServiceTest {
         assertThat(jwt.getClaimAsStringList("roles"))
                 .containsExactly("EMPLOYE", "RESPONSABLE");
 
+        assertThat((Long) jwt.getClaim("session_version")).isEqualTo(0L);
+
         assertThat(jwt.getIssuedAt()).isAfterOrEqualTo(before.truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
         assertThat(Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()))
                 .isEqualTo(Duration.ofMinutes(15));
@@ -95,46 +96,54 @@ class JwtServiceTest {
     @Test
     void generateAccessToken_compteNonActif_leveIllegalArgument() {
 
-        assertThatThrownBy(() -> jwtService.generateAccessToken(
-                user(AccountStatus.EN_ATTENTE_ACTIVATION, "EMPLOYE")))
+        AppUser enAttente = user(AccountStatus.EN_ATTENTE_ACTIVATION, "EMPLOYE");
+        AppUser desactive = user(AccountStatus.DESACTIVE, "EMPLOYE");
+
+        assertThatThrownBy(() -> jwtService.generateAccessToken(enAttente))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        assertThatThrownBy(() -> jwtService.generateAccessToken(
-                user(AccountStatus.DESACTIVE, "EMPLOYE")))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void generateAccessToken_utilisateurNullOuSansId_leveIllegalArgument() {
-
-        assertThatThrownBy(() -> jwtService.generateAccessToken(null))
-                .isInstanceOf(IllegalArgumentException.class);
-
-        AppUser withoutId = user(AccountStatus.ACTIF, "EMPLOYE");
-        withoutId.setId(null);
-
-        assertThatThrownBy(() -> jwtService.generateAccessToken(withoutId))
+        assertThatThrownBy(() -> jwtService.generateAccessToken(desactive))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void generateAccessToken_aucunRole_leveIllegalState() {
+    void generateAccessToken_utilisateurSansRole_leveIllegalState() {
 
-        assertThatThrownBy(() -> jwtService.generateAccessToken(user(AccountStatus.ACTIF)))
+        AppUser sansRole = user(AccountStatus.ACTIF);
+
+        assertThatThrownBy(() -> jwtService.generateAccessToken(sansRole))
                 .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void constructeur_dureeNulleOuNegative_leveIllegalArgument() {
+    void generateAccessToken_utilisateurInvalide_leveIllegalArgument() {
 
-        NimbusJwtEncoder encoder = NimbusJwtEncoder.withSecretKey(key).build();
+        AppUser sansId = new AppUser();
+        sansId.setStatus(AccountStatus.ACTIF);
+
+        assertThatThrownBy(() -> jwtService.generateAccessToken(null))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThatThrownBy(() -> jwtService.generateAccessToken(sansId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void constructeur_dureeNegativeOuNulle_leveIllegalArgument() {
+
+        NimbusJwtEncoder encoder = NimbusJwtEncoder
+                .withSecretKey(key)
+                .algorithm(MacAlgorithm.HS256)
+                .build();
 
         assertThatThrownBy(() -> new JwtService(encoder, ISSUER, Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        assertThatThrownBy(() -> new JwtService(encoder, ISSUER, Duration.ofMinutes(-5)))
+        assertThatThrownBy(() -> new JwtService(encoder, ISSUER, Duration.ofSeconds(-1)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    // ===== Utilitaires =====
 
     private static AppUser user(AccountStatus status, String... roleCodes) {
 

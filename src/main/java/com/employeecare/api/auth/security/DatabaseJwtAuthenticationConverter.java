@@ -72,6 +72,17 @@ public class DatabaseJwtAuthenticationConverter
                         "Compte utilisateur introuvable."
                 ));
 
+        Object versionClaim = jwt.getClaims()
+                .get("session_version");
+
+        if (!(versionClaim instanceof Number tokenVersion)
+                || tokenVersion.longValue() != user.getSessionVersion()) {
+
+            throw new InvalidBearerTokenException(
+                    "Cette session n'est plus valide. Veuillez vous reconnecter."
+            );
+        }
+
         // 3. Vérifier que le compte est actif
 
         if (user.getStatus() != AccountStatus.ACTIF) {

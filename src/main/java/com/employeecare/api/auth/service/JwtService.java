@@ -101,6 +101,8 @@ public class JwtService {
 
                 .claim("roles", roles)
 
+                .claim("session_version", user.getSessionVersion())
+
                 .build();
 
         // 5. Définir l'algorithme de signature

@@ -33,6 +33,8 @@ public interface AppUserMapper {
 
     @Mapping(target = "status", ignore = true)
 
+    @Mapping(target = "sessionVersion", ignore = true)
+
     @Mapping(target = "department", ignore = true)
 
     @Mapping(target = "roles", ignore = true)

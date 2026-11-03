@@ -3,6 +3,7 @@ package com.employeecare.api.admin.controller;
 import com.employeecare.api.admin.service.AdminEmployeeApplicationService;
 import com.employeecare.api.generated.models.CreateEmployeeRequest;
 import com.employeecare.api.generated.models.EmployeeAccount;
+import com.employeecare.api.generated.models.UpdateEmployeeStatusRequest;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -71,5 +73,22 @@ class EmployeeAdminControllerTest {
         assertThatThrownBy(() -> controller.createEmployeeAccount(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("déjà utilisée");
+    }
+
+    @Test
+    void updateEmployeeStatus_retourne200AvecLeCompteMisAJour() {
+
+        String employeeId = UUID.randomUUID().toString();
+        UpdateEmployeeStatusRequest request = new UpdateEmployeeStatusRequest();
+        EmployeeAccount expected = new EmployeeAccount();
+
+        when(adminEmployeeService.updateEmployeeStatus(employeeId, request)).thenReturn(expected);
+
+        ResponseEntity<EmployeeAccount> response =
+                controller.updateEmployeeStatus(employeeId, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(expected);
+        verify(adminEmployeeService).updateEmployeeStatus(employeeId, request);
     }
 }
