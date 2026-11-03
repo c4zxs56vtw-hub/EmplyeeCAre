@@ -1,5 +1,6 @@
 package com.employeecare.api.auth.security;
 
+import com.employeecare.api.auth.service.JwtRevocationService;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
 import com.employeecare.api.user.repository.AppUserRepository;
@@ -28,14 +29,25 @@ public class DatabaseJwtAuthenticationConverter
 
     private final AppUserRepository appUserRepository;
 
+    private final JwtRevocationService jwtRevocationService;
+
     public DatabaseJwtAuthenticationConverter(
-            AppUserRepository appUserRepository
+            AppUserRepository appUserRepository,
+            JwtRevocationService jwtRevocationService
     ) {
         this.appUserRepository = appUserRepository;
+        this.jwtRevocationService = jwtRevocationService;
     }
 
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
+
+        if (jwtRevocationService.isRevoked(jwt)) {
+
+            throw new InvalidBearerTokenException(
+                    "Ce jeton a été révoqué. Veuillez vous reconnecter."
+            );
+        }
 
         // 1. Récupérer l'identifiant contenu dans le JWT
 
@@ -59,6 +71,17 @@ public class DatabaseJwtAuthenticationConverter
                 .orElseThrow(() -> new InvalidBearerTokenException(
                         "Compte utilisateur introuvable."
                 ));
+
+        Object versionClaim = jwt.getClaims()
+                .get("session_version");
+
+        if (!(versionClaim instanceof Number tokenVersion)
+                || tokenVersion.longValue() != user.getSessionVersion()) {
+
+            throw new InvalidBearerTokenException(
+                    "Cette session n'est plus valide. Veuillez vous reconnecter."
+            );
+        }
 
         // 3. Vérifier que le compte est actif
 

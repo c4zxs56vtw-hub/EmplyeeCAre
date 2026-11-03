@@ -1,10 +1,12 @@
 package com.employeecare.api.user.repository;
 
 import com.employeecare.api.user.entity.AppUser;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,4 +27,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
         WHERE u.id = :id
         """)
     Optional<AppUser> findByIdWithRoles(@Param("id") UUID id);
+
+    @EntityGraph(attributePaths = {"roles","department"})
+    List<AppUser> findAllByOrderByRolesDesc();
 }
