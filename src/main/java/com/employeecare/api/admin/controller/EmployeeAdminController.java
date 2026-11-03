@@ -1,12 +1,14 @@
 package com.employeecare.api.admin.controller;
 
 import com.employeecare.api.admin.service.AdminEmployeeApplicationService;
+import com.employeecare.api.responsable.service.ResponsableRoleService;
 
 import com.employeecare.api.generated.apis.EspaceAdministrateurApi;
 
 import com.employeecare.api.generated.models.CreateEmployeeRequest;
 import com.employeecare.api.generated.models.EmployeeAccount;
 import com.employeecare.api.generated.models.UpdateEmployeeStatusRequest;
+import com.employeecare.api.generated.models.UpdateRoleRequest;
 
 import jakarta.validation.Valid;
 
@@ -26,10 +28,14 @@ public class EmployeeAdminController implements EspaceAdministrateurApi {
 
     private final AdminEmployeeApplicationService adminEmployeeService;
 
+    private final ResponsableRoleService responsableRoleService;
+
     public EmployeeAdminController(
-            AdminEmployeeApplicationService adminEmployeeService
+            AdminEmployeeApplicationService adminEmployeeService,
+            ResponsableRoleService responsableRoleService
     ) {
         this.adminEmployeeService = adminEmployeeService;
+        this.responsableRoleService = responsableRoleService;
     }
 
     @Override
@@ -65,6 +71,22 @@ public class EmployeeAdminController implements EspaceAdministrateurApi {
 
         EmployeeAccount employee =
                 adminEmployeeService.updateEmployeeStatus(
+                        employeeId,
+                        request
+                );
+
+        return ResponseEntity.ok(employee);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    public ResponseEntity<EmployeeAccount> updateEmployeeRole(
+            @PathVariable("employeeId") String employeeId,
+            @Valid @RequestBody UpdateRoleRequest request
+    ) {
+
+        EmployeeAccount employee =
+                responsableRoleService.updateEmployeeRole(
                         employeeId,
                         request
                 );
