@@ -1,9 +1,11 @@
 package com.employeecare.api.admin.controller;
 
 import com.employeecare.api.admin.service.AdminEmployeeApplicationService;
+import com.employeecare.api.responsable.service.ResponsableRoleService;
 import com.employeecare.api.generated.models.CreateEmployeeRequest;
 import com.employeecare.api.generated.models.EmployeeAccount;
 import com.employeecare.api.generated.models.UpdateEmployeeStatusRequest;
+import com.employeecare.api.generated.models.UpdateRoleRequest;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +30,9 @@ class EmployeeAdminControllerTest {
 
     @Mock
     private AdminEmployeeApplicationService adminEmployeeService;
+
+    @Mock
+    private ResponsableRoleService responsableRoleService;
 
     @InjectMocks
     private EmployeeAdminController controller;
@@ -90,5 +95,22 @@ class EmployeeAdminControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isSameAs(expected);
         verify(adminEmployeeService).updateEmployeeStatus(employeeId, request);
+    }
+
+    @Test
+    void updateEmployeeRole_retourne200AvecLeCompteMisAJour() {
+
+        String employeeId = UUID.randomUUID().toString();
+        UpdateRoleRequest request = new UpdateRoleRequest();
+        EmployeeAccount expected = new EmployeeAccount();
+
+        when(responsableRoleService.updateEmployeeRole(employeeId, request)).thenReturn(expected);
+
+        ResponseEntity<EmployeeAccount> response =
+                controller.updateEmployeeRole(employeeId, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(expected);
+        verify(responsableRoleService).updateEmployeeRole(employeeId, request);
     }
 }

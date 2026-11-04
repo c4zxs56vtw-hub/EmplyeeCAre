@@ -1,0 +1,81 @@
+package com.employeecare.api.ticket.controller;
+
+import com.employeecare.api.generated.models.CreateTicketRequest;
+import com.employeecare.api.generated.models.TicketSummary;
+import com.employeecare.api.ticket.service.TicketService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class EmployeeTicketControllerTest {
+
+    @Mock
+    private TicketService ticketService;
+
+    @InjectMocks
+    private EmployeeTicketController controller;
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("createMyEmployeeTicket - Retourne 201 Created avec l'identifiant du JWT")
+    void createMyEmployeeTicket_shouldReturn201() {
+        UUID employeeId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(employeeId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        CreateTicketRequest request = new CreateTicketRequest()
+                .title("Impossible d'accéder au réseau")
+                .description("Depuis ce matin, je ne parviens plus à accéder au réseau informatique.")
+                .categoryCode("TECHNIQUE")
+                .isConfidential(false);
+
+        TicketSummary expected = new TicketSummary()
+                .id(UUID.randomUUID().toString())
+                .reference("SIG-2026-000001")
+                .title("Impossible d'accéder au réseau");
+
+        when(ticketService.createTicket(employeeId, request)).thenReturn(expected);
+
+        ResponseEntity<TicketSummary> response = controller.createMyEmployeeTicket(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isSameAs(expected);
+    }
+
+    @Test
+    @DisplayName("createMyEmployeeTicket - Sans authentification JWT lève AuthenticationCredentialsNotFoundException")
+    void createMyEmployeeTicket_withoutJwt_shouldThrow() {
+        SecurityContextHolder.clearContext();
+        CreateTicketRequest request = new CreateTicketRequest();
+
+        assertThatThrownBy(() -> controller.createMyEmployeeTicket(request))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+}

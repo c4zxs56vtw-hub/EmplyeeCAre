@@ -266,6 +266,32 @@ paths:
                   $ref: '#/components/schemas/TicketSummary'
         '403':
           description: Rôle `EMPLOYE` requis
+    post:
+      tags:
+        - Espace Employé
+      summary: Créer un nouveau signalement
+      operationId: createMyEmployeeTicket
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '201':
+          description: Signalement créé avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Données du signalement invalides
+        '401':
+          description: Utilisateur non authentifié
+        '403':
+          description: Rôle EMPLOYE requis
 
   /responsable/tickets:
     get:
@@ -747,3 +773,28 @@ components:
         createdAt:
           type: string
           example: "24/10/2026"
+
+    CreateTicketRequest:
+      type: object
+      required:
+        - title
+        - description
+        - categoryCode
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 200
+          example: Impossible d'accéder au réseau
+        description:
+          type: string
+          minLength: 10
+          maxLength: 5000
+          example: Le réseau informatique est inaccessible depuis ce matin.
+        categoryCode:
+          type: string
+          example: TECHNIQUE
+        isConfidential:
+          type: boolean
+          default: false
+          description: Indique si le signalement est confidentiel
