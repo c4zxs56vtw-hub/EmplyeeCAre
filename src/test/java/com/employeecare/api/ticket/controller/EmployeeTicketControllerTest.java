@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +37,40 @@ class EmployeeTicketControllerTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("getMyEmployeeTickets - Retourne 200 OK avec la liste des signalements de l'employé")
+    void getMyEmployeeTickets_shouldReturn200() {
+        UUID employeeId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(employeeId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        TicketSummary expectedSummary = new TicketSummary()
+                .id(UUID.randomUUID().toString())
+                .reference("SIG-2026-000001")
+                .title("Impossible d'accéder au réseau");
+
+        when(ticketService.getMyTickets(employeeId)).thenReturn(List.of(expectedSummary));
+
+        ResponseEntity<List<TicketSummary>> response = controller.getMyEmployeeTickets();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsExactly(expectedSummary);
+    }
+
+    @Test
+    @DisplayName("getMyEmployeeTickets - Sans authentification JWT lève AuthenticationCredentialsNotFoundException")
+    void getMyEmployeeTickets_withoutJwt_shouldThrow() {
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> controller.getMyEmployeeTickets())
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
     }
 
     @Test

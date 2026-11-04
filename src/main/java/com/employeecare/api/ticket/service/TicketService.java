@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Year;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -202,32 +203,60 @@ public class TicketService {
 
         Ticket savedTicket = ticketRepository.saveAndFlush(ticket);
 
-        // 10. Construire la réponse API
+        return toTicketSummary(savedTicket);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketSummary> getMyTickets(UUID employeeId) {
+
+        // 1. Récupérer les signalements de l'employé
+
+        List<Ticket> tickets = ticketRepository
+                .findByEmployee_IdOrderByCreatedAtDesc(
+                        employeeId
+                );
+
+        // 2. Transformer les entités en réponses API
+
+        return tickets.stream()
+                .map(this::toTicketSummary)
+                .toList();
+    }
+
+    private TicketSummary toTicketSummary(Ticket ticket) {
 
         TicketSummary response = new TicketSummary();
 
-        response.setId(savedTicket.getId().toString());
+        response.setId(
+                ticket.getId().toString()
+        );
 
-        response.setReference(savedTicket.getReference());
+        response.setReference(
+                ticket.getReference()
+        );
 
-        response.setTitle(savedTicket.getTitle());
+        response.setTitle(
+                ticket.getTitle()
+        );
 
-        response.setCategory(category.getLabel());
+        response.setCategory(
+                ticket.getCategory().getLabel()
+        );
 
         response.setPriority(
                 TicketSummary.PriorityEnum.fromValue(
-                        savedTicket.getPriority().name()
+                        ticket.getPriority().name()
                 )
         );
 
         response.setStatus(
                 TicketSummary.StatusEnum.fromValue(
-                        savedTicket.getStatus().name()
+                        ticket.getStatus().name()
                 )
         );
 
         response.setIsConfidential(
-                savedTicket.isConfidential()
+                ticket.isConfidential()
         );
 
         DateTimeFormatter formatter = DateTimeFormatter
@@ -235,7 +264,7 @@ public class TicketService {
                 .withZone(ZoneId.of("Africa/Douala"));
 
         response.setCreatedAt(
-                formatter.format(savedTicket.getCreatedAt())
+                formatter.format(ticket.getCreatedAt())
         );
 
         return response;

@@ -5,6 +5,8 @@ import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.ticket.entity.Ticket;
 import com.employeecare.api.ticket.entity.TicketCategory;
+import com.employeecare.api.ticket.entity.TicketPriority;
+import com.employeecare.api.ticket.entity.TicketStatus;
 import com.employeecare.api.ticket.repository.TicketCategoryRepository;
 import com.employeecare.api.ticket.repository.TicketRepository;
 import com.employeecare.api.user.entity.AccountStatus;
@@ -24,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -146,5 +149,36 @@ class TicketServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("getMyTickets - Retourne la liste des signalements de l'employé")
+    void getMyTickets_shouldReturnMappedSummaries() {
+        UUID ticketId = UUID.randomUUID();
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Impossible d'accéder au réseau");
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.EN_ATTENTE);
+        ticket.setConfidential(true);
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        when(ticketRepository.findByEmployee_IdOrderByCreatedAtDesc(employeeId))
+                .thenReturn(List.of(ticket));
+
+        List<TicketSummary> result = ticketService.getMyTickets(employeeId);
+
+        assertThat(result).hasSize(1);
+        TicketSummary summary = result.get(0);
+        assertThat(summary.getId()).isEqualTo(ticketId.toString());
+        assertThat(summary.getReference()).isEqualTo("SIG-2026-000001");
+        assertThat(summary.getTitle()).isEqualTo("Impossible d'accéder au réseau");
+        assertThat(summary.getCategory()).isEqualTo("Problèmes techniques");
+        assertThat(summary.getPriority()).isEqualTo(TicketSummary.PriorityEnum.MOYENNE);
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.EN_ATTENTE);
+        assertThat(summary.getIsConfidential()).isTrue();
+        assertThat(summary.getCreatedAt()).isEqualTo("04/11/2026");
     }
 }

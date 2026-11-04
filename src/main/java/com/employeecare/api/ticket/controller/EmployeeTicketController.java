@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +31,41 @@ public class EmployeeTicketController implements EspaceEmployApi {
 
     public EmployeeTicketController(TicketService ticketService) {
         this.ticketService = ticketService;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<List<TicketSummary>> getMyEmployeeTickets() {
+
+        // 1. Récupérer l'authentification courante
+
+        Authentication authentication = SecurityContextHolder
+                .getContext()
+                .getAuthentication();
+
+        // 2. Vérifier qu'il s'agit d'une authentification JWT
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        // 3. Identifier l'employé connecté
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        // 4. Récupérer ses signalements
+
+        List<TicketSummary> tickets = ticketService
+                .getMyTickets(employeeId);
+
+        // 5. Retourner la liste
+
+        return ResponseEntity.ok(tickets);
     }
 
     @Override
