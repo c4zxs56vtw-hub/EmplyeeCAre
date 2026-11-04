@@ -3,6 +3,7 @@ package com.employeecare.api.ticket.controller;
 import com.employeecare.api.generated.apis.EspaceEmployApi;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
+import com.employeecare.api.generated.models.ReviewTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
 
 import com.employeecare.api.ticket.service.TicketService;
@@ -18,9 +19,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +33,41 @@ public class EmployeeTicketController implements EspaceEmployApi {
 
     public EmployeeTicketController(TicketService ticketService) {
         this.ticketService = ticketService;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<List<TicketSummary>> getMyEmployeeTickets() {
+
+        // 1. Récupérer l'authentification courante
+
+        Authentication authentication = SecurityContextHolder
+                .getContext()
+                .getAuthentication();
+
+        // 2. Vérifier qu'il s'agit d'une authentification JWT
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        // 3. Identifier l'employé connecté
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        // 4. Récupérer ses signalements
+
+        List<TicketSummary> tickets = ticketService
+                .getMyTickets(employeeId);
+
+        // 5. Retourner la liste
+
+        return ResponseEntity.ok(tickets);
     }
 
     @Override
@@ -69,5 +107,62 @@ public class EmployeeTicketController implements EspaceEmployApi {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<TicketSummary> reviewMyTicket(
+
+            @PathVariable("ticketId")
+            UUID ticketId,
+
+            @Valid
+            @RequestBody
+            ReviewTicketRequest request
+
+    ) {
+
+        // =====================================
+        // 1. RECUPERER L'AUTHENTIFICATION
+        // =====================================
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+
+        // =====================================
+        // 2. IDENTIFIER L'EMPLOYE
+        // =====================================
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+
+        // =====================================
+        // 3. ENREGISTRER SA DECISION
+        // =====================================
+
+        TicketSummary response = ticketService.reviewTicket(
+                employeeId,
+                ticketId,
+                request
+        );
+
+
+        // =====================================
+        // 4. RETOURNER LE RESULTAT
+        // =====================================
+
+        return ResponseEntity.ok(response);
     }
 }

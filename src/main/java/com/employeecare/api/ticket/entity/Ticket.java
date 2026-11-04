@@ -131,6 +131,23 @@ public class Ticket {
     private boolean confidential = false;
 
 
+    // ======================================
+    // RESPONSABLE ATTRIBUE
+    // ======================================
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_responsable_id")
+    private AppUser assignedResponsable;
+
+
+    // ======================================
+    // DATE DE PRISE EN CHARGE
+    // ======================================
+
+    @Column(name = "taken_at")
+    private Instant takenAt;
+
+
     // =====================================
     // DATES
     // =====================================
