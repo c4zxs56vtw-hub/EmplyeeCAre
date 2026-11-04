@@ -18,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -72,5 +73,54 @@ public class ResponsableTicketController
         // 5. Retourner la réponse
 
         return ResponseEntity.ok(tickets);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('RESPONSABLE')")
+    public ResponseEntity<TicketSummary> takeChargeTicket(
+            @PathVariable("ticketId") String ticketId
+    ) {
+
+        // 1. Récupérer l'authentification
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        // 2. Identifier le responsable connecté
+
+        UUID responsableId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        // 3. Identifier le signalement
+
+        UUID targetTicketId;
+
+        try {
+
+            targetTicketId = UUID.fromString(ticketId);
+
+        } catch (IllegalArgumentException exception) {
+
+            return ResponseEntity.badRequest().build();
+        }
+
+        // 4. Prendre le signalement en charge
+
+        TicketSummary response = ticketService.takeCharge(
+                responsableId,
+                targetTicketId
+        );
+
+        return ResponseEntity.ok(response);
     }
 }

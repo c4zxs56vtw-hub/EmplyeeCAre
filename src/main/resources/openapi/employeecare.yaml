@@ -326,6 +326,44 @@ paths:
         '403':
           description: Rôle `RESPONSABLE` requis
 
+  /responsable/tickets/{ticketId}/take-charge:
+    post:
+      tags:
+        - Espace Responsable
+      summary: Prendre en charge un signalement
+      description: |
+        Permet au responsable connecté de prendre
+        en charge un signalement de son périmètre.
+
+        Le signalement doit être EN_ATTENTE
+        et ne pas avoir de responsable attribué.
+      operationId: takeChargeTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Signalement pris en charge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Identifiant invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Signalement inexistant ou hors périmètre
+        '409':
+          description: Signalement déjà pris en charge
+
   /admin/employees:
     get:
       tags:

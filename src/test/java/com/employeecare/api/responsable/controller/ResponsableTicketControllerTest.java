@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -70,5 +71,49 @@ class ResponsableTicketControllerTest {
 
         assertThatThrownBy(() -> controller.getResponsableTickets())
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("takeChargeTicket - Retourne 200 OK avec le signalement pris en charge")
+    void takeChargeTicket_shouldReturn200() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(responsableId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        TicketSummary summary = new TicketSummary()
+                .id(ticketId.toString())
+                .reference("SIG-2026-000001")
+                .status(TicketSummary.StatusEnum.DIAGNOSTIC_EN_COURS);
+
+        when(ticketService.takeCharge(responsableId, ticketId)).thenReturn(summary);
+
+        ResponseEntity<TicketSummary> response = controller.takeChargeTicket(ticketId.toString());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(summary);
+    }
+
+    @Test
+    @DisplayName("takeChargeTicket - Retourne 400 Bad Request si ticketId n'est pas un UUID valide")
+    void takeChargeTicket_invalidUuid_shouldReturn400() {
+        UUID responsableId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(responsableId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        ResponseEntity<TicketSummary> response = controller.takeChargeTicket("invalid-uuid");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(ticketService);
     }
 }

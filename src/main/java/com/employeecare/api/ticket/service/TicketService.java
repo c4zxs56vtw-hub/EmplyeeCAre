@@ -8,10 +8,12 @@ import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 
 import com.employeecare.api.ticket.entity.Ticket;
 import com.employeecare.api.ticket.entity.TicketCategory;
+import com.employeecare.api.ticket.entity.TicketEvent;
 import com.employeecare.api.ticket.entity.TicketPriority;
 import com.employeecare.api.ticket.entity.TicketStatus;
 
 import com.employeecare.api.ticket.repository.TicketCategoryRepository;
+import com.employeecare.api.ticket.repository.TicketEventRepository;
 import com.employeecare.api.ticket.repository.TicketRepository;
 
 import com.employeecare.api.user.entity.AccountStatus;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.time.Year;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -40,6 +43,7 @@ public class TicketService {
     private final AppUserRepository userRepository;
     private final JdbcTemplate jdbcTemplate;
     private final ResponsableAccountRepository responsableAccountRepository;
+    private final TicketEventRepository ticketEventRepository;
 
     public TicketService(
 
@@ -51,7 +55,9 @@ public class TicketService {
 
             JdbcTemplate jdbcTemplate,
 
-            ResponsableAccountRepository responsableAccountRepository
+            ResponsableAccountRepository responsableAccountRepository,
+
+            TicketEventRepository ticketEventRepository
 
     ) {
 
@@ -64,6 +70,8 @@ public class TicketService {
         this.jdbcTemplate = jdbcTemplate;
 
         this.responsableAccountRepository = responsableAccountRepository;
+
+        this.ticketEventRepository = ticketEventRepository;
     }
 
     @Transactional
@@ -310,6 +318,165 @@ public class TicketService {
         return tickets.stream()
                 .map(this::toTicketSummary)
                 .toList();
+    }
+
+    @Transactional
+    public TicketSummary takeCharge(
+            UUID responsableId,
+            UUID ticketId
+    ) {
+
+        // =====================================
+        // 1. VERIFIER LE PROFIL RESPONSABLE
+        // =====================================
+
+        ResponsableAccount responsable =
+                responsableAccountRepository
+                        .findById(responsableId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.FORBIDDEN,
+                                "Profil responsable introuvable."
+                        ));
+
+        if (!responsable.isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le profil responsable est désactivé."
+            );
+        }
+
+        AppUser actor = responsable.getUser();
+
+        // Vérifier que le compte est actif.
+
+        if (actor.getStatus() != AccountStatus.ACTIF) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le compte utilisateur est désactivé."
+            );
+        }
+
+        // Vérifier que le rôle RESPONSABLE existe toujours.
+
+        boolean hasResponsableRole = actor.getRoles()
+                .stream()
+                .anyMatch(role ->
+                        "RESPONSABLE".equals(role.getCode())
+                );
+
+        if (!hasResponsableRole) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le rôle RESPONSABLE est requis."
+            );
+        }
+
+
+        // =====================================
+        // 2. RECUPERER ET VERROUILLER LE TICKET
+        // =====================================
+
+        Ticket ticket = ticketRepository
+                .findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+
+        // =====================================
+        // 3. VERIFIER LE PERIMETRE
+        // =====================================
+
+        boolean sameDepartment =
+                responsable.getDepartment() != null
+                && responsable.getDepartment().getId()
+                        .equals(ticket.getDepartment().getId());
+
+        boolean allowedCategory =
+                responsable.getAssignedCategories()
+                        .contains(ticket.getCategory().getCode());
+
+        boolean confidentialAllowed =
+                !ticket.isConfidential()
+                || responsable.isConfidentialHabilitation();
+
+        if (!sameDepartment
+                || !allowedCategory
+                || !confidentialAllowed) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+
+        // =====================================
+        // 4. VERIFIER LA DISPONIBILITE
+        // =====================================
+
+        if (ticket.getAssignedResponsable() != null
+                || ticket.getStatus() != TicketStatus.EN_ATTENTE) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ce signalement ne peut plus être pris en charge."
+            );
+        }
+
+
+        // =====================================
+        // 5. ATTRIBUER LE RESPONSABLE
+        // =====================================
+
+        ticket.setAssignedResponsable(actor);
+
+        ticket.setTakenAt(Instant.now());
+
+        ticket.setStatus(
+                TicketStatus.DIAGNOSTIC_EN_COURS
+        );
+
+
+        // =====================================
+        // 6. ENREGISTRER L'HISTORIQUE
+        // =====================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+
+        event.setActor(actor);
+
+        event.setEventType("PRISE_EN_CHARGE");
+
+        event.setOldStatus(
+                TicketStatus.EN_ATTENTE
+        );
+
+        event.setNewStatus(
+                TicketStatus.DIAGNOSTIC_EN_COURS
+        );
+
+
+        // =====================================
+        // 7. SAUVEGARDER
+        // =====================================
+
+        ticketRepository.saveAndFlush(ticket);
+
+        ticketEventRepository.save(event);
+
+
+        // =====================================
+        // 8. RETOURNER LA REPONSE
+        // =====================================
+
+        return toTicketSummary(ticket);
     }
 
     private TicketSummary toTicketSummary(Ticket ticket) {

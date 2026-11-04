@@ -7,9 +7,11 @@ import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 import com.employeecare.api.ticket.entity.Ticket;
 import com.employeecare.api.ticket.entity.TicketCategory;
+import com.employeecare.api.ticket.entity.TicketEvent;
 import com.employeecare.api.ticket.entity.TicketPriority;
 import com.employeecare.api.ticket.entity.TicketStatus;
 import com.employeecare.api.ticket.repository.TicketCategoryRepository;
+import com.employeecare.api.ticket.repository.TicketEventRepository;
 import com.employeecare.api.ticket.repository.TicketRepository;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +61,9 @@ class TicketServiceTest {
 
     @Mock
     private ResponsableAccountRepository responsableAccountRepository;
+
+    @Mock
+    private TicketEventRepository ticketEventRepository;
 
     @InjectMocks
     private TicketService ticketService;
@@ -260,5 +267,131 @@ class TicketServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("takeCharge - Succès : attribue le responsable, passe en DIAGNOSTIC_EN_COURS et crée un TicketEvent")
+    void takeCharge_shouldAssignTicketAndRecordEvent() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser actor = new AppUser();
+        actor.setId(responsableId);
+        actor.setStatus(AccountStatus.ACTIF);
+        actor.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setUser(actor);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+        account.setConfidentialHabilitation(false);
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.EN_ATTENTE);
+        ticket.setConfidential(false);
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.takeCharge(responsableId, ticketId);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.DIAGNOSTIC_EN_COURS);
+        assertThat(ticket.getAssignedResponsable()).isSameAs(actor);
+        assertThat(ticket.getTakenAt()).isNotNull();
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getTicket()).isSameAs(ticket);
+        assertThat(savedEvent.getActor()).isSameAs(actor);
+        assertThat(savedEvent.getEventType()).isEqualTo("PRISE_EN_CHARGE");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.EN_ATTENTE);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+    }
+
+    @Test
+    @DisplayName("takeCharge - Signalement déjà pris en charge lève 409 Conflict")
+    void takeCharge_alreadyAssigned_shouldThrow409() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser actor = new AppUser();
+        actor.setId(responsableId);
+        actor.setStatus(AccountStatus.ACTIF);
+        actor.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setUser(actor);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        ticket.setAssignedResponsable(actor);
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.takeCharge(responsableId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("takeCharge - Signalement hors périmètre lève 404 Not Found")
+    void takeCharge_outsidePerimeter_shouldThrow404() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser actor = new AppUser();
+        actor.setId(responsableId);
+        actor.setStatus(AccountStatus.ACTIF);
+        actor.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setUser(actor);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(Set.of("RH")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setDepartment(department);
+        ticket.setCategory(category); // TECHNIQUE (hors périmètre RH)
+        ticket.setStatus(TicketStatus.EN_ATTENTE);
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.takeCharge(responsableId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
     }
 }
