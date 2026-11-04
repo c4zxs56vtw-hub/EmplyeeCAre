@@ -347,17 +347,16 @@ paths:
     post:
       tags:
         - Espace Employé
-      summary: Clôturer définitivement un signalement résolu
+      summary: Clôturer définitivement un signalement
       description: |
         Permet à l'employé ayant créé un signalement
-        de le clôturer définitivement lorsque son statut
-        est RESOLU.
+        de le clôturer après confirmation de sa résolution.
 
-        Seule la transition :
-
-        RESOLU -> CLOTURE
-
+        Seule la transition RESOLU -> CLOTURE
         est autorisée.
+
+        Un signalement clôturé ne peut plus être
+        modifié par les opérations de traitement ordinaires.
       operationId: closeMyTicket
       security:
         - bearerAuth: []
@@ -370,7 +369,7 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Signalement clôturé
+          description: Signalement clôturé avec succès
           content:
             application/json:
               schema:
@@ -384,7 +383,7 @@ paths:
         '404':
           description: Signalement introuvable ou non autorisé
         '409':
-          description: Seul un signalement résolu peut être clôturé
+          description: Le signalement ne peut pas être clôturé
 
   /responsable/tickets:
     get:

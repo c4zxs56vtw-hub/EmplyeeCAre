@@ -169,10 +169,7 @@ public class EmployeeTicketController implements EspaceEmployApi {
     @Override
     @PreAuthorize("hasRole('EMPLOYE')")
     public ResponseEntity<TicketSummary> closeMyTicket(
-
-            @PathVariable("ticketId")
-            UUID ticketId
-
+            @PathVariable("ticketId") UUID ticketId
     ) {
 
         // =====================================
@@ -184,6 +181,11 @@ public class EmployeeTicketController implements EspaceEmployApi {
                         .getContext()
                         .getAuthentication();
 
+
+        // =====================================
+        // 2. VERIFIER LE JWT
+        // =====================================
+
         if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
 
             throw new AuthenticationCredentialsNotFoundException(
@@ -193,7 +195,7 @@ public class EmployeeTicketController implements EspaceEmployApi {
 
 
         // =====================================
-        // 2. IDENTIFIER L'EMPLOYE
+        // 3. IDENTIFIER L'EMPLOYE CONNECTE
         // =====================================
 
         UUID employeeId = UUID.fromString(
@@ -202,7 +204,7 @@ public class EmployeeTicketController implements EspaceEmployApi {
 
 
         // =====================================
-        // 3. CLOTURER LE SIGNALEMENT
+        // 4. CLOTURER LE SIGNALEMENT
         // =====================================
 
         TicketSummary response = ticketService.closeTicket(
@@ -212,7 +214,7 @@ public class EmployeeTicketController implements EspaceEmployApi {
 
 
         // =====================================
-        // 4. RETOURNER LE RESULTAT
+        // 5. RETOURNER LE RESULTAT
         // =====================================
 
         return ResponseEntity.ok(response);

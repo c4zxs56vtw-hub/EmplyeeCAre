@@ -1093,16 +1093,13 @@ public class TicketService {
 
     @Transactional
     public TicketSummary closeTicket(
-
             UUID employeeId,
-
             UUID ticketId
-
     ) {
 
-        // =========================================
-        // 1. VERIFIER L'EMPLOYE CONNECTE
-        // =========================================
+        // ==========================================
+        // 1. VERIFIER LE COMPTE EMPLOYE
+        // ==========================================
 
         AppUser employee = userRepository
                 .findByIdWithRoles(employeeId)
@@ -1119,6 +1116,11 @@ public class TicketService {
             );
         }
 
+
+        // ==========================================
+        // 2. VERIFIER LE ROLE EMPLOYE
+        // ==========================================
+
         boolean hasEmployeeRole = employee.getRoles()
                 .stream()
                 .anyMatch(role ->
@@ -1134,9 +1136,9 @@ public class TicketService {
         }
 
 
-        // =========================================
-        // 2. RECUPERER ET VERROUILLER LE SIGNALEMENT
-        // =========================================
+        // ==========================================
+        // 3. RECUPERER LE SIGNALEMENT
+        // ==========================================
 
         Ticket ticket = ticketRepository
                 .findOwnedByIdForUpdate(
@@ -1149,9 +1151,9 @@ public class TicketService {
                 ));
 
 
-        // =========================================
-        // 3. VERIFIER LE STATUT ACTUEL
-        // =========================================
+        // ==========================================
+        // 4. VERIFIER LE STATUT ACTUEL
+        // ==========================================
 
         if (ticket.getStatus() != TicketStatus.RESOLU) {
 
@@ -1161,27 +1163,21 @@ public class TicketService {
             );
         }
 
-        if (ticket.getAssignedResponsable() == null) {
 
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Aucun responsable n'est attribué à ce signalement."
-            );
-        }
-
-
-        // =========================================
-        // 4. CLOTURER LE SIGNALEMENT
-        // =========================================
+        // ==========================================
+        // 5. MODIFIER LE STATUT
+        // ==========================================
 
         TicketStatus oldStatus = ticket.getStatus();
 
-        ticket.setStatus(TicketStatus.CLOTURE);
+        ticket.setStatus(
+                TicketStatus.CLOTURE
+        );
 
 
-        // =========================================
-        // 5. ENREGISTRER L'EVENEMENT
-        // =========================================
+        // ==========================================
+        // 6. CREER L'EVENEMENT D'HISTORIQUE
+        // ==========================================
 
         TicketEvent event = new TicketEvent();
 
@@ -1189,25 +1185,29 @@ public class TicketService {
 
         event.setActor(employee);
 
-        event.setEventType("CLOTURE_SIGNALEMENT");
+        event.setEventType(
+                "CLOTURE_SIGNALEMENT"
+        );
 
         event.setOldStatus(oldStatus);
 
-        event.setNewStatus(TicketStatus.CLOTURE);
+        event.setNewStatus(
+                TicketStatus.CLOTURE
+        );
 
 
-        // =========================================
-        // 6. SAUVEGARDER EN BASE
-        // =========================================
+        // ==========================================
+        // 7. ENREGISTRER LES MODIFICATIONS
+        // ==========================================
 
         ticketRepository.saveAndFlush(ticket);
 
         ticketEventRepository.save(event);
 
 
-        // =========================================
-        // 7. RETOURNER LA REPONSE
-        // =========================================
+        // ==========================================
+        // 8. CONSTRUIRE LA REPONSE
+        // ==========================================
 
         return toTicketSummary(ticket);
     }
