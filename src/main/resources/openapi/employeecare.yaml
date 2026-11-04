@@ -299,8 +299,18 @@ paths:
         - Espace Responsable
       summary: Lister les signalements attribués au périmètre du responsable
       description: |
-        Exige le rôle `RESPONSABLE`. Retourne les signalements du département ou des catégories prises en charge par le responsable connecté.
-        Les signalements sensibles/confidentiels ne sont retournés que si `isConfidentialHab == true`.
+        Exige le rôle RESPONSABLE.
+
+        Retourne uniquement les signalements appartenant
+        au département du responsable connecté ET aux
+        catégories qui lui sont attribuées.
+
+        Les signalements confidentiels ne sont visibles
+        que si le responsable dispose de l'habilitation
+        isConfidentialHab.
+
+        Un responsable sans catégorie attribuée reçoit
+        une liste vide.
       operationId: getResponsableTickets
       security:
         - bearerAuth: []

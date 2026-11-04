@@ -3,6 +3,9 @@ package com.employeecare.api.ticket.service;
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
 
+import com.employeecare.api.responsable.entity.ResponsableAccount;
+import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
+
 import com.employeecare.api.ticket.entity.Ticket;
 import com.employeecare.api.ticket.entity.TicketCategory;
 import com.employeecare.api.ticket.entity.TicketPriority;
@@ -26,6 +29,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -35,17 +39,31 @@ public class TicketService {
     private final TicketCategoryRepository categoryRepository;
     private final AppUserRepository userRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final ResponsableAccountRepository responsableAccountRepository;
 
     public TicketService(
+
             TicketRepository ticketRepository,
+
             TicketCategoryRepository categoryRepository,
+
             AppUserRepository userRepository,
-            JdbcTemplate jdbcTemplate
+
+            JdbcTemplate jdbcTemplate,
+
+            ResponsableAccountRepository responsableAccountRepository
+
     ) {
+
         this.ticketRepository = ticketRepository;
+
         this.categoryRepository = categoryRepository;
+
         this.userRepository = userRepository;
+
         this.jdbcTemplate = jdbcTemplate;
+
+        this.responsableAccountRepository = responsableAccountRepository;
     }
 
     @Transactional
@@ -217,6 +235,77 @@ public class TicketService {
                 );
 
         // 2. Transformer les entités en réponses API
+
+        return tickets.stream()
+                .map(this::toTicketSummary)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketSummary> getResponsableTickets(
+            UUID responsableId
+    ) {
+
+        // 1. Rechercher le profil responsable
+
+        ResponsableAccount responsable =
+                responsableAccountRepository
+                        .findById(responsableId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.FORBIDDEN,
+                                "Aucun profil responsable associé à ce compte."
+                        ));
+
+        // 2. Vérifier que le profil est actif
+
+        if (!responsable.isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le profil responsable est désactivé."
+            );
+        }
+
+        // 3. Vérifier le département attribué
+
+        if (responsable.getDepartment() == null) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Aucun département attribué au responsable."
+            );
+        }
+
+        UUID departmentId =
+                responsable.getDepartment().getId();
+
+        // 4. Récupérer les catégories attribuées
+
+        Set<String> categoryCodes =
+                responsable.getAssignedCategories();
+
+        // 5. Aucune catégorie = aucun signalement visible
+
+        if (categoryCodes == null || categoryCodes.isEmpty()) {
+
+            return List.of();
+        }
+
+        // 6. Vérifier l'habilitation confidentielle
+
+        boolean canReadConfidential =
+                responsable.isConfidentialHabilitation();
+
+        // 7. Récupérer uniquement les signalements autorisés
+
+        List<Ticket> tickets = ticketRepository
+                .findVisibleForResponsable(
+                        departmentId,
+                        categoryCodes,
+                        canReadConfidential
+                );
+
+        // 8. Construire la réponse
 
         return tickets.stream()
                 .map(this::toTicketSummary)

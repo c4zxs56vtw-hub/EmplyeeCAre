@@ -3,6 +3,8 @@ package com.employeecare.api.ticket.service;
 import com.employeecare.api.department.entity.Department;
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
+import com.employeecare.api.responsable.entity.ResponsableAccount;
+import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 import com.employeecare.api.ticket.entity.Ticket;
 import com.employeecare.api.ticket.entity.TicketCategory;
 import com.employeecare.api.ticket.entity.TicketPriority;
@@ -35,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,6 +54,9 @@ class TicketServiceTest {
 
     @Mock
     private JdbcTemplate jdbcTemplate;
+
+    @Mock
+    private ResponsableAccountRepository responsableAccountRepository;
 
     @InjectMocks
     private TicketService ticketService;
@@ -180,5 +186,79 @@ class TicketServiceTest {
         assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.EN_ATTENTE);
         assertThat(summary.getIsConfidential()).isTrue();
         assertThat(summary.getCreatedAt()).isEqualTo("04/11/2026");
+    }
+
+    @Test
+    @DisplayName("getResponsableTickets - Retourne uniquement les signalements visibles du périmètre")
+    void getResponsableTickets_shouldReturnVisibleTickets() {
+        UUID responsableId = UUID.randomUUID();
+        Set<String> categories = Set.of("TECHNIQUE", "RH");
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(categories));
+        account.setConfidentialHabilitation(false);
+
+        Ticket ticket = new Ticket();
+        ticket.setId(UUID.randomUUID());
+        ticket.setReference("SIG-2026-000002");
+        ticket.setTitle("Problème réseau");
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.EN_ATTENTE);
+        ticket.setConfidential(false);
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findVisibleForResponsable(department.getId(), account.getAssignedCategories(), false))
+                .thenReturn(List.of(ticket));
+
+        List<TicketSummary> result = ticketService.getResponsableTickets(responsableId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getReference()).isEqualTo("SIG-2026-000002");
+    }
+
+    @Test
+    @DisplayName("getResponsableTickets - Retourne liste vide si aucune catégorie attribuée")
+    void getResponsableTickets_withoutCategories_shouldReturnEmptyList() {
+        UUID responsableId = UUID.randomUUID();
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>());
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+
+        List<TicketSummary> result = ticketService.getResponsableTickets(responsableId);
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(ticketRepository);
+    }
+
+    @Test
+    @DisplayName("getResponsableTickets - Lève 403 si profil responsable inactif ou absent")
+    void getResponsableTickets_inactiveOrMissingProfile_shouldThrow403() {
+        UUID responsableId = UUID.randomUUID();
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.getResponsableTickets(responsableId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+
+        ResponsableAccount inactive = new ResponsableAccount();
+        inactive.setActive(false);
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(inactive));
+
+        assertThatThrownBy(() -> ticketService.getResponsableTickets(responsableId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
     }
 }
