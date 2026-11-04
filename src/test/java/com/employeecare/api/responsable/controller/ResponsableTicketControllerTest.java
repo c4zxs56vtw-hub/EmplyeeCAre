@@ -1,5 +1,6 @@
 package com.employeecare.api.responsable.controller;
 
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 import com.employeecare.api.ticket.service.TicketService;
@@ -157,5 +158,67 @@ class ResponsableTicketControllerTest {
 
         assertThatThrownBy(() -> controller.updateResponsableTicketStatus(ticketId, request))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("resumeTicket - Retourne 200 OK avec le signalement en DIAGNOSTIC_EN_COURS")
+    void resumeTicket_shouldReturn200() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(responsableId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        TicketSummary summary = new TicketSummary()
+                .id(ticketId.toString())
+                .reference("SIG-2026-000001")
+                .status(TicketSummary.StatusEnum.DIAGNOSTIC_EN_COURS);
+
+        when(ticketService.resumeTicket(responsableId, ticketId)).thenReturn(summary);
+
+        ResponseEntity<TicketSummary> response = controller.resumeTicket(ticketId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(summary);
+    }
+
+    @Test
+    @DisplayName("resumeTicket - Sans JWT lève AuthenticationCredentialsNotFoundException")
+    void resumeTicket_withoutJwt_shouldThrow() {
+        SecurityContextHolder.clearContext();
+        UUID ticketId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> controller.resumeTicket(ticketId))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("getResponsableTicketHistory - Retourne 200 OK avec l'historique du signalement")
+    void getResponsableTicketHistory_shouldReturn200() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(responsableId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        TicketHistoryEvent event = new TicketHistoryEvent()
+                .id(UUID.randomUUID().toString())
+                .eventType("PRISE_EN_CHARGE")
+                .actorLabel("Responsable");
+
+        when(ticketService.getResponsableTicketHistory(responsableId, ticketId)).thenReturn(List.of(event));
+
+        ResponseEntity<List<TicketHistoryEvent>> response = controller.getResponsableTicketHistory(ticketId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsExactly(event);
     }
 }

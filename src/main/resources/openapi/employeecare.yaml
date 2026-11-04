@@ -343,6 +343,82 @@ paths:
         '409':
           description: Le signalement ne peut pas être évalué
 
+  /employe/tickets/{ticketId}/close:
+    post:
+      tags:
+        - Espace Employé
+      summary: Clôturer définitivement un signalement
+      description: |
+        Permet à l'employé ayant créé un signalement
+        de le clôturer après confirmation de sa résolution.
+
+        Seule la transition RESOLU -> CLOTURE
+        est autorisée.
+
+        Un signalement clôturé ne peut plus être
+        modifié par les opérations de traitement ordinaires.
+      operationId: closeMyTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Signalement clôturé avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Identifiant invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Signalement introuvable ou non autorisé
+        '409':
+          description: Le signalement ne peut pas être clôturé
+
+  /employe/tickets/{ticketId}/history:
+    get:
+      tags:
+        - Espace Employé
+      summary: Consulter l'historique d'un signalement personnel
+      description: |
+        Retourne les événements d'un signalement
+        appartenant à l'employé authentifié.
+      operationId: getMyTicketHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Historique du signalement
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketHistoryEvent'
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+
   /responsable/tickets:
     get:
       tags:
@@ -459,6 +535,86 @@ paths:
           description: Signalement inexistant ou non autorisé
         '409':
           description: Transition de statut impossible
+
+  /responsable/tickets/{ticketId}/resume:
+    post:
+      tags:
+        - Espace Responsable
+      summary: Reprendre le traitement d'un signalement rouvert
+      description: |
+        Permet au responsable attribué au signalement
+        de reprendre son traitement lorsque le statut
+        est ROUVERT.
+
+        Seule la transition :
+
+        ROUVERT -> DIAGNOSTIC_EN_COURS
+
+        est autorisée.
+      operationId: resumeTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Traitement repris
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Identifiant invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+        '409':
+          description: Signalement non rouvert
+
+  /responsable/tickets/{ticketId}/history:
+    get:
+      tags:
+        - Espace Responsable
+      summary: Consulter l'historique d'un signalement attribué
+      description: |
+        Retourne les événements d'un signalement
+        attribué au responsable connecté.
+
+        Le responsable doit toujours posséder
+        les habilitations nécessaires.
+      operationId: getResponsableTicketHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Historique du signalement
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketHistoryEvent'
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
 
   /admin/employees:
     get:
@@ -980,3 +1136,37 @@ components:
             Facultatif lorsque la solution est acceptée.
             Obligatoire lorsque la solution est refusée,
             avec au moins 10 caractères.
+
+    TicketHistoryEvent:
+      type: object
+      required:
+        - id
+        - eventType
+        - actorLabel
+        - occurredAt
+      properties:
+        id:
+          type: string
+        eventType:
+          type: string
+          example: PRISE_EN_CHARGE
+        actorLabel:
+          type: string
+          description: Type d'intervenant sans identité personnelle
+          example: Responsable
+        previousStatus:
+          type: string
+          nullable: true
+          example: EN_ATTENTE
+        newStatus:
+          type: string
+          nullable: true
+          example: DIAGNOSTIC_EN_COURS
+        note:
+          type: string
+          nullable: true
+          example: Le traitement du signalement a commencé.
+        occurredAt:
+          type: string
+          description: Date UTC au format ISO 8601
+          example: "2026-11-04T09:15:00Z"

@@ -3,6 +3,7 @@ package com.employeecare.api.ticket.service;
 import com.employeecare.api.department.entity.Department;
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
@@ -631,5 +632,360 @@ class TicketServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    // =========================================================================
+    // Étape 40 — resumeTicket
+    // =========================================================================
+
+    @Test
+    @DisplayName("resumeTicket - Passe de ROUVERT à DIAGNOSTIC_EN_COURS et crée l'événement REPRISE_TRAITEMENT")
+    void resumeTicket_shouldTransitionToDiagnosticEnCoursAndCreateEvent() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser responsable = new AppUser();
+        responsable.setId(responsableId);
+        responsable.setStatus(AccountStatus.ACTIF);
+        responsable.setDepartment(department);
+        responsable.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount responsableAccount = new ResponsableAccount();
+        responsableAccount.setUserId(responsableId);
+        responsableAccount.setUser(responsable);
+        responsableAccount.setDepartment(department);
+        responsableAccount.setActive(true);
+        responsableAccount.setConfidentialHabilitation(false);
+        responsableAccount.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setDescription("Connexion coupée");
+        ticket.setCategory(category);
+        ticket.setDepartment(department);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.ROUVERT);
+        ticket.setConfidential(false);
+        ticket.setEmployee(employee);
+        ticket.setAssignedResponsable(responsable);
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+        ticket.setUpdatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(responsableAccount));
+        when(userRepository.findByIdWithRoles(responsableId)).thenReturn(Optional.of(responsable));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.resumeTicket(responsableId, ticketId);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.DIAGNOSTIC_EN_COURS);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getEventType()).isEqualTo("REPRISE_TRAITEMENT");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.ROUVERT);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+        assertThat(savedEvent.getActor()).isEqualTo(responsable);
+    }
+
+    @Test
+    @DisplayName("resumeTicket - Signalement non ROUVERT lève 409 Conflict")
+    void resumeTicket_whenStatusNotRouvert_shouldThrow409() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser responsable = new AppUser();
+        responsable.setId(responsableId);
+        responsable.setStatus(AccountStatus.ACTIF);
+        responsable.setDepartment(department);
+        responsable.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount responsableAccount = new ResponsableAccount();
+        responsableAccount.setUserId(responsableId);
+        responsableAccount.setUser(responsable);
+        responsableAccount.setDepartment(department);
+        responsableAccount.setActive(true);
+        responsableAccount.setConfidentialHabilitation(false);
+        responsableAccount.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setCategory(category);
+        ticket.setDepartment(department);
+        ticket.setStatus(TicketStatus.RESOLU);
+        ticket.setConfidential(false);
+        ticket.setAssignedResponsable(responsable);
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(responsableAccount));
+        when(userRepository.findByIdWithRoles(responsableId)).thenReturn(Optional.of(responsable));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.resumeTicket(responsableId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("resumeTicket - Autre responsable non attribué lève 404 Not Found")
+    void resumeTicket_whenNotAssignedResponsable_shouldThrow404() {
+        UUID responsableId = UUID.randomUUID();
+        UUID otherResponsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser responsable = new AppUser();
+        responsable.setId(responsableId);
+        responsable.setStatus(AccountStatus.ACTIF);
+        responsable.setDepartment(department);
+        responsable.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        AppUser otherResponsable = new AppUser();
+        otherResponsable.setId(otherResponsableId);
+
+        ResponsableAccount responsableAccount = new ResponsableAccount();
+        responsableAccount.setUserId(responsableId);
+        responsableAccount.setUser(responsable);
+        responsableAccount.setDepartment(department);
+        responsableAccount.setActive(true);
+        responsableAccount.setConfidentialHabilitation(false);
+        responsableAccount.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setCategory(category);
+        ticket.setDepartment(department);
+        ticket.setStatus(TicketStatus.ROUVERT);
+        ticket.setConfidential(false);
+        ticket.setAssignedResponsable(otherResponsable);
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(responsableAccount));
+        when(userRepository.findByIdWithRoles(responsableId)).thenReturn(Optional.of(responsable));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.resumeTicket(responsableId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    // =========================================================================
+    // Étape 41 — closeTicket
+    // =========================================================================
+
+    @Test
+    @DisplayName("closeTicket - Passe de RESOLU à CLOTURE et crée l'événement CLOTURE_SIGNALEMENT")
+    void closeTicket_shouldTransitionFromResoluToClotureAndCreateEvent() {
+        UUID ticketId = UUID.randomUUID();
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setEmployee(employee);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.RESOLU);
+        ticket.setAssignedResponsable(new AppUser());
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.closeTicket(employeeId, ticketId);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.CLOTURE);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOTURE);
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getEventType()).isEqualTo("CLOTURE_SIGNALEMENT");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.RESOLU);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.CLOTURE);
+        assertThat(savedEvent.getActor()).isEqualTo(employee);
+    }
+
+    @Test
+    @DisplayName("closeTicket - Signalement non RESOLU lève 409 Conflict")
+    void closeTicket_whenStatusNotResolu_shouldThrow409() {
+        UUID ticketId = UUID.randomUUID();
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setEmployee(employee);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setStatus(TicketStatus.ATTENTE_VALIDATION);
+        ticket.setAssignedResponsable(new AppUser());
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.closeTicket(employeeId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("closeTicket - Signalement introuvable ou appartenant à un autre employé lève 404 Not Found")
+    void closeTicket_whenNotFoundOrNotOwned_shouldThrow404() {
+        UUID ticketId = UUID.randomUUID();
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.closeTicket(employeeId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    // =========================================================================
+    // Étape 42 — getMyTicketHistory & getResponsableTicketHistory
+    // =========================================================================
+
+    @Test
+    @DisplayName("getMyTicketHistory - Retourne l'historique chronologique si l'employé est propriétaire")
+    void getMyTicketHistory_whenOwner_shouldReturnEvents() {
+        UUID ticketId = UUID.randomUUID();
+        UUID eventId1 = UUID.randomUUID();
+        UUID eventId2 = UUID.randomUUID();
+
+        TicketEvent event1 = new TicketEvent();
+        event1.setId(eventId1);
+        event1.setEventType("CREATION_SIGNALEMENT");
+        event1.setOldStatus(null);
+        event1.setNewStatus(TicketStatus.EN_ATTENTE);
+        event1.setCreatedAt(Instant.parse("2026-11-04T08:30:00Z"));
+
+        TicketEvent event2 = new TicketEvent();
+        event2.setId(eventId2);
+        event2.setEventType("PRISE_EN_CHARGE");
+        event2.setOldStatus(TicketStatus.EN_ATTENTE);
+        event2.setNewStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        event2.setCreatedAt(Instant.parse("2026-11-04T09:15:00Z"));
+
+        when(ticketRepository.existsByIdAndEmployee_Id(ticketId, employeeId)).thenReturn(true);
+        when(ticketEventRepository.findHistoryByTicketId(ticketId)).thenReturn(List.of(event1, event2));
+
+        List<TicketHistoryEvent> history = ticketService.getMyTicketHistory(employeeId, ticketId);
+
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).getId()).isEqualTo(eventId1.toString());
+        assertThat(history.get(0).getEventType()).isEqualTo("CREATION_SIGNALEMENT");
+        assertThat(history.get(0).getActorLabel()).isEqualTo("Employé");
+        assertThat(history.get(0).getPreviousStatus()).isNull();
+        assertThat(history.get(0).getNewStatus()).isEqualTo("EN_ATTENTE");
+        assertThat(history.get(0).getOccurredAt()).isEqualTo("2026-11-04T08:30:00Z");
+
+        assertThat(history.get(1).getId()).isEqualTo(eventId2.toString());
+        assertThat(history.get(1).getEventType()).isEqualTo("PRISE_EN_CHARGE");
+        assertThat(history.get(1).getActorLabel()).isEqualTo("Responsable");
+        assertThat(history.get(1).getPreviousStatus()).isEqualTo("EN_ATTENTE");
+        assertThat(history.get(1).getNewStatus()).isEqualTo("DIAGNOSTIC_EN_COURS");
+    }
+
+    @Test
+    @DisplayName("getMyTicketHistory - Employé non propriétaire lève 404 Not Found")
+    void getMyTicketHistory_whenNotOwner_shouldThrow404() {
+        UUID ticketId = UUID.randomUUID();
+
+        when(ticketRepository.existsByIdAndEmployee_Id(ticketId, employeeId)).thenReturn(false);
+
+        assertThatThrownBy(() -> ticketService.getMyTicketHistory(employeeId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("getResponsableTicketHistory - Retourne l'historique si le responsable est attribué et habilité")
+    void getResponsableTicketHistory_whenAssignedAndAuthorized_shouldReturnEvents() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+
+        AppUser responsable = new AppUser();
+        responsable.setId(responsableId);
+
+        ResponsableAccount responsableAccount = new ResponsableAccount();
+        responsableAccount.setUserId(responsableId);
+        responsableAccount.setUser(responsable);
+        responsableAccount.setDepartment(department);
+        responsableAccount.setActive(true);
+        responsableAccount.setConfidentialHabilitation(false);
+        responsableAccount.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setConfidential(false);
+        ticket.setAssignedResponsable(responsable);
+
+        TicketEvent event = new TicketEvent();
+        event.setId(eventId);
+        event.setEventType("SOUMISSION_VALIDATION");
+        event.setOldStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        event.setNewStatus(TicketStatus.ATTENTE_VALIDATION);
+        event.setNote("Solution appliquée");
+        event.setCreatedAt(Instant.parse("2026-11-04T11:20:00Z"));
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(responsableAccount));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketEventRepository.findHistoryByTicketId(ticketId)).thenReturn(List.of(event));
+
+        List<TicketHistoryEvent> history = ticketService.getResponsableTicketHistory(responsableId, ticketId);
+
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).getEventType()).isEqualTo("SOUMISSION_VALIDATION");
+        assertThat(history.get(0).getActorLabel()).isEqualTo("Responsable");
+        assertThat(history.get(0).getNote()).isEqualTo("Solution appliquée");
+    }
+
+    @Test
+    @DisplayName("getResponsableTicketHistory - Responsable non attribué lève 404 Not Found")
+    void getResponsableTicketHistory_whenNotAssigned_shouldThrow404() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        ResponsableAccount responsableAccount = new ResponsableAccount();
+        responsableAccount.setUserId(responsableId);
+        responsableAccount.setDepartment(department);
+        responsableAccount.setActive(true);
+        responsableAccount.setConfidentialHabilitation(false);
+        responsableAccount.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setConfidential(false);
+        ticket.setAssignedResponsable(null);
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(responsableAccount));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.getResponsableTicketHistory(responsableId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
     }
 }

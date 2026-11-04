@@ -80,4 +80,9 @@ public interface TicketRepository
 
     );
 
+    boolean existsByIdAndEmployee_Id(
+            UUID id,
+            UUID employeeId
+    );
+
 }

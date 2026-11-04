@@ -2,6 +2,7 @@ package com.employeecare.api.ticket.service;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
@@ -229,7 +230,37 @@ public class TicketService {
 
         // 9. Enregistrer dans PostgreSQL
 
-        Ticket savedTicket = ticketRepository.saveAndFlush(ticket);
+        // 1. Enregistrer le signalement.
+
+        Ticket savedTicket =
+                ticketRepository.saveAndFlush(ticket);
+
+
+        // 2. Créer l'événement de création.
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(savedTicket);
+
+        event.setActor(employee);
+
+        event.setEventType(
+                "CREATION_SIGNALEMENT"
+        );
+
+        event.setOldStatus(null);
+
+        event.setNewStatus(
+                TicketStatus.EN_ATTENTE
+        );
+
+
+        // 3. Enregistrer l'événement.
+
+        ticketEventRepository.save(event);
+
+
+        // 4. Retourner la réponse.
 
         return toTicketSummary(savedTicket);
     }
@@ -885,6 +916,513 @@ public class TicketService {
         // =========================================
 
         return toTicketSummary(ticket);
+    }
+
+    @Transactional
+    public TicketSummary resumeTicket(
+
+            UUID responsableId,
+
+            UUID ticketId
+
+    ) {
+
+        // =========================================
+        // 1. VERIFIER LE COMPTE RESPONSABLE
+        // =========================================
+
+        ResponsableAccount responsableAccount =
+                responsableAccountRepository
+                        .findById(responsableId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.FORBIDDEN,
+                                "Aucun périmètre responsable trouvé."
+                        ));
+
+        if (!responsableAccount.isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le périmètre responsable est désactivé."
+            );
+        }
+
+
+        // =========================================
+        // 2. VERIFIER LE COMPTE UTILISATEUR
+        // =========================================
+
+        AppUser actor = userRepository
+                .findByIdWithRoles(responsableId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Utilisateur introuvable."
+                ));
+
+        if (actor.getStatus() != AccountStatus.ACTIF) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le compte responsable est désactivé."
+            );
+        }
+
+        boolean hasResponsableRole = actor.getRoles()
+                .stream()
+                .anyMatch(role ->
+                        "RESPONSABLE".equals(role.getCode())
+                );
+
+        if (!hasResponsableRole) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le rôle RESPONSABLE est requis."
+            );
+        }
+
+
+        // =========================================
+        // 3. RECUPERER ET VERROUILLER LE SIGNALEMENT
+        // =========================================
+
+        Ticket ticket = ticketRepository
+                .findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+
+        // =========================================
+        // 4. VERIFIER LE RESPONSABLE ATTRIBUE
+        // =========================================
+
+        if (ticket.getAssignedResponsable() == null) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        boolean isAssignedResponsable =
+                ticket.getAssignedResponsable()
+                        .getId()
+                        .equals(responsableId);
+
+        if (!isAssignedResponsable) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+
+        // =========================================
+        // 5. VERIFIER LE PERIMETRE DU RESPONSABLE
+        // =========================================
+
+        boolean sameDepartment =
+                responsableAccount.getDepartment() != null
+                && responsableAccount.getDepartment()
+                        .getId()
+                        .equals(ticket.getDepartment().getId());
+
+        if (!sameDepartment) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        boolean categoryAllowed =
+                responsableAccount
+                        .getAssignedCategories()
+                        .contains(ticket.getCategory().getCode());
+
+        if (!categoryAllowed) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        if (ticket.isConfidential()
+                && !responsableAccount.isConfidentialHabilitation()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+
+        // =========================================
+        // 6. VERIFIER LE STATUT ACTUEL
+        // =========================================
+
+        if (ticket.getStatus() != TicketStatus.ROUVERT) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Seul un signalement rouvert peut être repris."
+            );
+        }
+
+
+        // =========================================
+        // 7. METTRE A JOUR LE STATUT
+        // =========================================
+
+        TicketStatus oldStatus = ticket.getStatus();
+
+        ticket.setStatus(
+                TicketStatus.DIAGNOSTIC_EN_COURS
+        );
+
+
+        // =========================================
+        // 8. ENREGISTRER L'EVENEMENT
+        // =========================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+
+        event.setActor(actor);
+
+        event.setEventType(
+                "REPRISE_TRAITEMENT"
+        );
+
+        event.setOldStatus(oldStatus);
+
+        event.setNewStatus(
+                TicketStatus.DIAGNOSTIC_EN_COURS
+        );
+
+
+        // =========================================
+        // 9. SAUVEGARDER EN BASE
+        // =========================================
+
+        ticketRepository.saveAndFlush(ticket);
+
+        ticketEventRepository.save(event);
+
+
+        // =========================================
+        // 10. RETOURNER LE RESULTAT
+        // =========================================
+
+        return toTicketSummary(ticket);
+    }
+
+    @Transactional
+    public TicketSummary closeTicket(
+            UUID employeeId,
+            UUID ticketId
+    ) {
+
+        // ==========================================
+        // 1. VERIFIER LE COMPTE EMPLOYE
+        // ==========================================
+
+        AppUser employee = userRepository
+                .findByIdWithRoles(employeeId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Utilisateur introuvable."
+                ));
+
+        if (employee.getStatus() != AccountStatus.ACTIF) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le compte employé est désactivé."
+            );
+        }
+
+
+        // ==========================================
+        // 2. VERIFIER LE ROLE EMPLOYE
+        // ==========================================
+
+        boolean hasEmployeeRole = employee.getRoles()
+                .stream()
+                .anyMatch(role ->
+                        "EMPLOYE".equals(role.getCode())
+                );
+
+        if (!hasEmployeeRole) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le rôle EMPLOYE est requis."
+            );
+        }
+
+
+        // ==========================================
+        // 3. RECUPERER LE SIGNALEMENT
+        // ==========================================
+
+        Ticket ticket = ticketRepository
+                .findOwnedByIdForUpdate(
+                        ticketId,
+                        employeeId
+                )
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+
+        // ==========================================
+        // 4. VERIFIER LE STATUT ACTUEL
+        // ==========================================
+
+        if (ticket.getStatus() != TicketStatus.RESOLU) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Seul un signalement résolu peut être clôturé."
+            );
+        }
+
+
+        // ==========================================
+        // 5. MODIFIER LE STATUT
+        // ==========================================
+
+        TicketStatus oldStatus = ticket.getStatus();
+
+        ticket.setStatus(
+                TicketStatus.CLOTURE
+        );
+
+
+        // ==========================================
+        // 6. CREER L'EVENEMENT D'HISTORIQUE
+        // ==========================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+
+        event.setActor(employee);
+
+        event.setEventType(
+                "CLOTURE_SIGNALEMENT"
+        );
+
+        event.setOldStatus(oldStatus);
+
+        event.setNewStatus(
+                TicketStatus.CLOTURE
+        );
+
+
+        // ==========================================
+        // 7. ENREGISTRER LES MODIFICATIONS
+        // ==========================================
+
+        ticketRepository.saveAndFlush(ticket);
+
+        ticketEventRepository.save(event);
+
+
+        // ==========================================
+        // 8. CONSTRUIRE LA REPONSE
+        // ==========================================
+
+        return toTicketSummary(ticket);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketHistoryEvent> getMyTicketHistory(
+            UUID employeeId,
+            UUID ticketId
+    ) {
+
+        // 1. Vérifier que le signalement appartient à l'employé.
+
+        boolean isOwner = ticketRepository
+                .existsByIdAndEmployee_Id(
+                        ticketId,
+                        employeeId
+                );
+
+        if (!isOwner) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        // 2. Récupérer l'historique.
+
+        return loadTicketHistory(ticketId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketHistoryEvent> getResponsableTicketHistory(
+            UUID responsableId,
+            UUID ticketId
+    ) {
+
+        // 1. Vérifier le profil responsable.
+
+        ResponsableAccount responsable =
+                responsableAccountRepository
+                        .findById(responsableId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Signalement introuvable."
+                        ));
+
+        if (!responsable.isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        // 2. Récupérer le signalement.
+
+        Ticket ticket = ticketRepository
+                .findById(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+        // 3. Vérifier que le signalement lui est attribué.
+
+        boolean isAssigned =
+                ticket.getAssignedResponsable() != null
+                && ticket.getAssignedResponsable()
+                        .getId()
+                        .equals(responsableId);
+
+        // 4. Vérifier le département.
+
+        boolean sameDepartment =
+                responsable.getDepartment() != null
+                && responsable.getDepartment()
+                        .getId()
+                        .equals(ticket.getDepartment().getId());
+
+        // 5. Vérifier la catégorie.
+
+        boolean allowedCategory =
+                responsable.getAssignedCategories()
+                        .contains(ticket.getCategory().getCode());
+
+        // 6. Vérifier la confidentialité.
+
+        boolean confidentialAllowed =
+                !ticket.isConfidential()
+                || responsable.isConfidentialHabilitation();
+
+        // 7. Refuser tout accès non autorisé.
+
+        if (!isAssigned
+                || !sameDepartment
+                || !allowedCategory
+                || !confidentialAllowed) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        // 8. Récupérer l'historique.
+
+        return loadTicketHistory(ticketId);
+    }
+
+    private List<TicketHistoryEvent> loadTicketHistory(
+            UUID ticketId
+    ) {
+
+        List<TicketEvent> events =
+                ticketEventRepository
+                        .findHistoryByTicketId(ticketId);
+
+        return events.stream()
+                .map(this::toHistoryEvent)
+                .toList();
+    }
+
+    private TicketHistoryEvent toHistoryEvent(
+            TicketEvent event
+    ) {
+
+        TicketHistoryEvent response =
+                new TicketHistoryEvent();
+
+        response.setId(
+                event.getId().toString()
+        );
+
+        response.setEventType(
+                event.getEventType()
+        );
+
+        // Ne pas exposer directement les données personnelles.
+
+        response.setActorLabel(
+                getActorLabel(event.getEventType())
+        );
+
+        if (event.getOldStatus() != null) {
+
+            response.setPreviousStatus(
+                    event.getOldStatus().name()
+            );
+        }
+
+        if (event.getNewStatus() != null) {
+
+            response.setNewStatus(
+                    event.getNewStatus().name()
+            );
+        }
+
+        response.setNote(
+                event.getNote()
+        );
+
+        response.setOccurredAt(
+                event.getCreatedAt().toString()
+        );
+
+        return response;
+    }
+
+    private String getActorLabel(String eventType) {
+
+        return switch (eventType) {
+
+            case "PRISE_EN_CHARGE",
+                 "SOUMISSION_VALIDATION",
+                 "REPRISE_TRAITEMENT" -> "Responsable";
+
+            case "CREATION_SIGNALEMENT",
+                 "SOLUTION_ACCEPTEE",
+                 "SOLUTION_REFUSEE",
+                 "CLOTURE_SIGNALEMENT" -> "Employé";
+
+            default -> "Intervenant";
+        };
     }
 
     private TicketSummary toTicketSummary(Ticket ticket) {

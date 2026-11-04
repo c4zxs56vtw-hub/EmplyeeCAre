@@ -4,6 +4,7 @@ import com.employeecare.api.generated.apis.EspaceEmployApi;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 
 import com.employeecare.api.ticket.service.TicketService;
@@ -164,5 +165,90 @@ public class EmployeeTicketController implements EspaceEmployApi {
         // =====================================
 
         return ResponseEntity.ok(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<TicketSummary> closeMyTicket(
+            @PathVariable("ticketId") UUID ticketId
+    ) {
+
+        // =====================================
+        // 1. RECUPERER L'AUTHENTIFICATION
+        // =====================================
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+
+        // =====================================
+        // 2. VERIFIER LE JWT
+        // =====================================
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+
+        // =====================================
+        // 3. IDENTIFIER L'EMPLOYE CONNECTE
+        // =====================================
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+
+        // =====================================
+        // 4. CLOTURER LE SIGNALEMENT
+        // =====================================
+
+        TicketSummary response = ticketService.closeTicket(
+                employeeId,
+                ticketId
+        );
+
+
+        // =====================================
+        // 5. RETOURNER LE RESULTAT
+        // =====================================
+
+        return ResponseEntity.ok(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<List<TicketHistoryEvent>> getMyTicketHistory(
+            @PathVariable("ticketId") UUID ticketId
+    ) {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        List<TicketHistoryEvent> history =
+                ticketService.getMyTicketHistory(
+                        employeeId,
+                        ticketId
+                );
+
+        return ResponseEntity.ok(history);
     }
 }
