@@ -154,4 +154,40 @@ class EmployeeTicketControllerTest {
         assertThatThrownBy(() -> controller.reviewMyTicket(ticketId, request))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
     }
+
+    @Test
+    @DisplayName("closeMyTicket - Retourne 200 OK avec le signalement au statut CLOTURE")
+    void closeMyTicket_shouldReturn200() {
+        UUID employeeId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(employeeId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        TicketSummary expected = new TicketSummary()
+                .id(ticketId.toString())
+                .reference("SIG-2026-000001")
+                .status(TicketSummary.StatusEnum.CLOTURE);
+
+        when(ticketService.closeTicket(employeeId, ticketId)).thenReturn(expected);
+
+        ResponseEntity<TicketSummary> response = controller.closeMyTicket(ticketId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(expected);
+    }
+
+    @Test
+    @DisplayName("closeMyTicket - Sans authentification JWT lève AuthenticationCredentialsNotFoundException")
+    void closeMyTicket_withoutJwt_shouldThrow() {
+        SecurityContextHolder.clearContext();
+        UUID ticketId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> controller.closeMyTicket(ticketId))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
 }

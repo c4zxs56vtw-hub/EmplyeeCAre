@@ -780,4 +780,79 @@ class TicketServiceTest {
                 .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
+
+    // =========================================================================
+    // Étape 41 — closeTicket
+    // =========================================================================
+
+    @Test
+    @DisplayName("closeTicket - Passe de RESOLU à CLOTURE et crée l'événement CLOTURE_SIGNALEMENT")
+    void closeTicket_shouldTransitionFromResoluToClotureAndCreateEvent() {
+        UUID ticketId = UUID.randomUUID();
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setEmployee(employee);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.RESOLU);
+        ticket.setAssignedResponsable(new AppUser());
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.closeTicket(employeeId, ticketId);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.CLOTURE);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOTURE);
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getEventType()).isEqualTo("CLOTURE_SIGNALEMENT");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.RESOLU);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.CLOTURE);
+        assertThat(savedEvent.getActor()).isEqualTo(employee);
+    }
+
+    @Test
+    @DisplayName("closeTicket - Signalement non RESOLU lève 409 Conflict")
+    void closeTicket_whenStatusNotResolu_shouldThrow409() {
+        UUID ticketId = UUID.randomUUID();
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setEmployee(employee);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setStatus(TicketStatus.ATTENTE_VALIDATION);
+        ticket.setAssignedResponsable(new AppUser());
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.closeTicket(employeeId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("closeTicket - Signalement introuvable ou appartenant à un autre employé lève 404 Not Found")
+    void closeTicket_whenNotFoundOrNotOwned_shouldThrow404() {
+        UUID ticketId = UUID.randomUUID();
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.closeTicket(employeeId, ticketId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }

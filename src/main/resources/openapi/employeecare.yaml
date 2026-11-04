@@ -343,6 +343,49 @@ paths:
         '409':
           description: Le signalement ne peut pas être évalué
 
+  /employe/tickets/{ticketId}/close:
+    post:
+      tags:
+        - Espace Employé
+      summary: Clôturer définitivement un signalement résolu
+      description: |
+        Permet à l'employé ayant créé un signalement
+        de le clôturer définitivement lorsque son statut
+        est RESOLU.
+
+        Seule la transition :
+
+        RESOLU -> CLOTURE
+
+        est autorisée.
+      operationId: closeMyTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Signalement clôturé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Identifiant invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Signalement introuvable ou non autorisé
+        '409':
+          description: Seul un signalement résolu peut être clôturé
+
   /responsable/tickets:
     get:
       tags:
