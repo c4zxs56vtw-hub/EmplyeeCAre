@@ -3,6 +3,7 @@ package com.employeecare.api.ticket.controller;
 import com.employeecare.api.generated.apis.EspaceEmployApi;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
+import com.employeecare.api.generated.models.ReviewTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
 
 import com.employeecare.api.ticket.service.TicketService;
@@ -18,6 +19,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -105,5 +107,62 @@ public class EmployeeTicketController implements EspaceEmployApi {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<TicketSummary> reviewMyTicket(
+
+            @PathVariable("ticketId")
+            UUID ticketId,
+
+            @Valid
+            @RequestBody
+            ReviewTicketRequest request
+
+    ) {
+
+        // =====================================
+        // 1. RECUPERER L'AUTHENTIFICATION
+        // =====================================
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+
+        // =====================================
+        // 2. IDENTIFIER L'EMPLOYE
+        // =====================================
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+
+        // =====================================
+        // 3. ENREGISTRER SA DECISION
+        // =====================================
+
+        TicketSummary response = ticketService.reviewTicket(
+                employeeId,
+                ticketId,
+                request
+        );
+
+
+        // =====================================
+        // 4. RETOURNER LE RESULTAT
+        // =====================================
+
+        return ResponseEntity.ok(response);
     }
 }

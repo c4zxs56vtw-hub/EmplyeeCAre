@@ -51,6 +51,13 @@ public class TicketEvent {
     private TicketStatus newStatus;
 
 
+    @Column(
+            name = "note",
+            columnDefinition = "TEXT"
+    )
+    private String note;
+
+
     @CreationTimestamp
     @Column(
             name = "created_at",

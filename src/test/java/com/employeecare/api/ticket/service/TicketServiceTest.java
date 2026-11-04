@@ -2,7 +2,9 @@ package com.employeecare.api.ticket.service;
 
 import com.employeecare.api.department.entity.Department;
 import com.employeecare.api.generated.models.CreateTicketRequest;
+import com.employeecare.api.generated.models.ReviewTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
+import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 import com.employeecare.api.ticket.entity.Ticket;
@@ -393,5 +395,241 @@ class TicketServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("submitForValidation - Succès : passe en ATTENTE_VALIDATION et enregistre l'événement avec note")
+    void submitForValidation_shouldUpdateStatusAndRecordEventWithNote() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser actor = new AppUser();
+        actor.setId(responsableId);
+        actor.setStatus(AccountStatus.ACTIF);
+        actor.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setUser(actor);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+        account.setConfidentialHabilitation(false);
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        ticket.setAssignedResponsable(actor);
+        ticket.setConfidential(false);
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest()
+                .status(UpdateTicketStatusRequest.StatusEnum.ATTENTE_VALIDATION)
+                .note("Le problème de connexion a été corrigé et validé.");
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.submitForValidation(responsableId, ticketId, request);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.ATTENTE_VALIDATION);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getTicket()).isSameAs(ticket);
+        assertThat(savedEvent.getActor()).isSameAs(actor);
+        assertThat(savedEvent.getEventType()).isEqualTo("SOUMISSION_VALIDATION");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
+        assertThat(savedEvent.getNote()).isEqualTo("Le problème de connexion a été corrigé et validé.");
+    }
+
+    @Test
+    @DisplayName("submitForValidation - Responsable non attribué lève 404 Not Found")
+    void submitForValidation_wrongResponsable_shouldThrow404() {
+        UUID responsableId = UUID.randomUUID();
+        UUID otherResponsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser actor = new AppUser();
+        actor.setId(responsableId);
+        actor.setStatus(AccountStatus.ACTIF);
+        actor.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        AppUser otherActor = new AppUser();
+        otherActor.setId(otherResponsableId);
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setUser(actor);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        ticket.setAssignedResponsable(otherActor);
+
+        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest()
+                .status(UpdateTicketStatusRequest.StatusEnum.ATTENTE_VALIDATION)
+                .note("Le problème de connexion a été corrigé et validé.");
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.submitForValidation(responsableId, ticketId, request))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("submitForValidation - Transition depuis un statut autre que DIAGNOSTIC_EN_COURS lève 409 Conflict")
+    void submitForValidation_invalidCurrentStatus_shouldThrow409() {
+        UUID responsableId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+
+        Role responsableRole = new Role();
+        responsableRole.setCode("RESPONSABLE");
+
+        AppUser actor = new AppUser();
+        actor.setId(responsableId);
+        actor.setStatus(AccountStatus.ACTIF);
+        actor.setRoles(new HashSet<>(Set.of(responsableRole)));
+
+        ResponsableAccount account = new ResponsableAccount();
+        account.setUserId(responsableId);
+        account.setUser(actor);
+        account.setActive(true);
+        account.setDepartment(department);
+        account.setAssignedCategories(new HashSet<>(Set.of("TECHNIQUE")));
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setStatus(TicketStatus.ATTENTE_VALIDATION);
+        ticket.setAssignedResponsable(actor);
+
+        UpdateTicketStatusRequest request = new UpdateTicketStatusRequest()
+                .status(UpdateTicketStatusRequest.StatusEnum.ATTENTE_VALIDATION)
+                .note("Le problème de connexion a été corrigé et validé.");
+
+        when(responsableAccountRepository.findById(responsableId)).thenReturn(Optional.of(account));
+        when(ticketRepository.findByIdForUpdate(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.submitForValidation(responsableId, ticketId, request))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("reviewTicket - ACCEPTER_SOLUTION passe le signalement à RESOLU")
+    void reviewTicket_acceptSolution_shouldSetStatusResolu() {
+        UUID ticketId = UUID.randomUUID();
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setEmployee(employee);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.ATTENTE_VALIDATION);
+        ticket.setAssignedResponsable(new AppUser());
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        ReviewTicketRequest request = new ReviewTicketRequest()
+                .action(ReviewTicketRequest.ActionEnum.ACCEPTER_SOLUTION);
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.reviewTicket(employeeId, ticketId, request);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.RESOLU);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.RESOLU);
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getEventType()).isEqualTo("SOLUTION_ACCEPTEE");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.RESOLU);
+        assertThat(savedEvent.getNote()).isNull();
+    }
+
+    @Test
+    @DisplayName("reviewTicket - REFUSER_SOLUTION passe le signalement à ROUVERT avec note obligatoire")
+    void reviewTicket_refuseSolution_shouldSetStatusRouvertWithNote() {
+        UUID ticketId = UUID.randomUUID();
+
+        Ticket ticket = new Ticket();
+        ticket.setId(ticketId);
+        ticket.setReference("SIG-2026-000001");
+        ticket.setTitle("Problème réseau");
+        ticket.setEmployee(employee);
+        ticket.setDepartment(department);
+        ticket.setCategory(category);
+        ticket.setPriority(TicketPriority.MOYENNE);
+        ticket.setStatus(TicketStatus.ATTENTE_VALIDATION);
+        ticket.setAssignedResponsable(new AppUser());
+        ticket.setCreatedAt(Instant.parse("2026-11-04T10:00:00Z"));
+
+        ReviewTicketRequest request = new ReviewTicketRequest()
+                .action(ReviewTicketRequest.ActionEnum.REFUSER_SOLUTION)
+                .note("Le problème de connexion persiste malgré l'intervention.");
+
+        when(userRepository.findByIdWithRoles(employeeId)).thenReturn(Optional.of(employee));
+        when(ticketRepository.findOwnedByIdForUpdate(ticketId, employeeId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveAndFlush(ticket)).thenReturn(ticket);
+
+        TicketSummary summary = ticketService.reviewTicket(employeeId, ticketId, request);
+
+        assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.ROUVERT);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.ROUVERT);
+
+        ArgumentCaptor<TicketEvent> eventCaptor = ArgumentCaptor.forClass(TicketEvent.class);
+        verify(ticketEventRepository).save(eventCaptor.capture());
+        TicketEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getEventType()).isEqualTo("SOLUTION_REFUSEE");
+        assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
+        assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.ROUVERT);
+        assertThat(savedEvent.getNote()).isEqualTo("Le problème de connexion persiste malgré l'intervention.");
+    }
+
+    @Test
+    @DisplayName("reviewTicket - REFUSER_SOLUTION sans note suffisante lève 400 Bad Request")
+    void reviewTicket_refuseWithoutNote_shouldThrow400() {
+        UUID ticketId = UUID.randomUUID();
+
+        ReviewTicketRequest request = new ReviewTicketRequest()
+                .action(ReviewTicketRequest.ActionEnum.REFUSER_SOLUTION)
+                .note("Court");
+
+        assertThatThrownBy(() -> ticketService.reviewTicket(employeeId, ticketId, request))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
     }
 }

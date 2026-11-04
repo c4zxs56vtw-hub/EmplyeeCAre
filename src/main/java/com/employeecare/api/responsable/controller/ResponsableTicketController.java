@@ -3,8 +3,11 @@ package com.employeecare.api.responsable.controller;
 import com.employeecare.api.generated.apis.EspaceResponsableApi;
 
 import com.employeecare.api.generated.models.TicketSummary;
+import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
 import com.employeecare.api.ticket.service.TicketService;
+
+import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
 
@@ -19,6 +22,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -120,6 +124,49 @@ public class ResponsableTicketController
                 responsableId,
                 targetTicketId
         );
+
+        return ResponseEntity.ok(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('RESPONSABLE')")
+    public ResponseEntity<TicketSummary> updateResponsableTicketStatus(
+
+            @PathVariable("ticketId") UUID ticketId,
+
+            @Valid @RequestBody UpdateTicketStatusRequest request
+    ) {
+
+        // 1. Récupérer l'authentification
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        // 2. Identifier le responsable connecté
+
+        UUID responsableId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        // 3. Soumettre le signalement à validation
+
+        TicketSummary response =
+                ticketService.submitForValidation(
+                        responsableId,
+                        ticketId,
+                        request
+                );
+
+        // 4. Retourner le résultat
 
         return ResponseEntity.ok(response);
     }

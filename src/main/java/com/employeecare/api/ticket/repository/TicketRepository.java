@@ -63,4 +63,21 @@ public interface TicketRepository
             @Param("ticketId") UUID ticketId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT t
+        FROM Ticket t
+        WHERE t.id = :ticketId
+          AND t.employee.id = :employeeId
+        """)
+    Optional<Ticket> findOwnedByIdForUpdate(
+
+            @Param("ticketId")
+            UUID ticketId,
+
+            @Param("employeeId")
+            UUID employeeId
+
+    );
+
 }

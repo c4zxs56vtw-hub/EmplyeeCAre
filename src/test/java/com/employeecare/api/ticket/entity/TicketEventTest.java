@@ -23,17 +23,19 @@ class TicketEventTest {
         event.setId(id);
         event.setTicket(ticket);
         event.setActor(actor);
-        event.setEventType("PRISE_EN_CHARGE");
-        event.setOldStatus(TicketStatus.EN_ATTENTE);
-        event.setNewStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        event.setEventType("SOUMISSION_VALIDATION");
+        event.setOldStatus(TicketStatus.DIAGNOSTIC_EN_COURS);
+        event.setNewStatus(TicketStatus.ATTENTE_VALIDATION);
+        event.setNote("Intervention terminée et validée.");
         event.setCreatedAt(now);
 
         assertThat(event.getId()).isEqualTo(id);
         assertThat(event.getTicket()).isSameAs(ticket);
         assertThat(event.getActor()).isSameAs(actor);
-        assertThat(event.getEventType()).isEqualTo("PRISE_EN_CHARGE");
-        assertThat(event.getOldStatus()).isEqualTo(TicketStatus.EN_ATTENTE);
-        assertThat(event.getNewStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+        assertThat(event.getEventType()).isEqualTo("SOUMISSION_VALIDATION");
+        assertThat(event.getOldStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+        assertThat(event.getNewStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
+        assertThat(event.getNote()).isEqualTo("Intervention terminée et validée.");
         assertThat(event.getCreatedAt()).isEqualTo(now);
     }
 }

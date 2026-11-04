@@ -1,7 +1,9 @@
 package com.employeecare.api.ticket.service;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
+import com.employeecare.api.generated.models.ReviewTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
+import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
@@ -475,6 +477,412 @@ public class TicketService {
         // =====================================
         // 8. RETOURNER LA REPONSE
         // =====================================
+
+        return toTicketSummary(ticket);
+    }
+
+    @Transactional
+    public TicketSummary submitForValidation(
+            UUID responsableId,
+            UUID ticketId,
+            UpdateTicketStatusRequest request
+    ) {
+
+        // ======================================
+        // 1. VALIDER LA REQUETE
+        // ======================================
+
+        if (request == null
+                || request.getStatus() == null
+                || !"ATTENTE_VALIDATION".equals(
+                        request.getStatus().toString()
+                )) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Le statut demandé est invalide."
+            );
+        }
+
+        String note = request.getNote() == null
+                ? ""
+                : request.getNote().trim();
+
+        if (note.length() < 10 || note.length() > 2000) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "La note doit contenir entre 10 et 2000 caractères."
+            );
+        }
+
+
+        // ======================================
+        // 2. VERIFIER LE RESPONSABLE
+        // ======================================
+
+        ResponsableAccount responsable =
+                responsableAccountRepository
+                        .findById(responsableId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.FORBIDDEN,
+                                "Profil responsable introuvable."
+                        ));
+
+        if (!responsable.isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le profil responsable est désactivé."
+            );
+        }
+
+        AppUser actor = responsable.getUser();
+
+        if (actor.getStatus() != AccountStatus.ACTIF) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le compte responsable n'est pas actif."
+            );
+        }
+
+        boolean hasResponsableRole = actor.getRoles()
+                .stream()
+                .anyMatch(role ->
+                        "RESPONSABLE".equals(role.getCode())
+                );
+
+        if (!hasResponsableRole) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le rôle RESPONSABLE est requis."
+            );
+        }
+
+
+        // ======================================
+        // 3. VERROUILLER LE SIGNALEMENT
+        // ======================================
+
+        Ticket ticket = ticketRepository
+                .findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+
+        // ======================================
+        // 4. VERIFIER LE RESPONSABLE ATTRIBUE
+        // ======================================
+
+        if (ticket.getAssignedResponsable() == null
+                || !ticket.getAssignedResponsable()
+                        .getId()
+                        .equals(responsableId)) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+
+        // ======================================
+        // 5. VERIFIER LE PERIMETRE ACTUEL
+        // ======================================
+
+        boolean sameDepartment =
+                responsable.getDepartment() != null
+                && responsable.getDepartment()
+                        .getId()
+                        .equals(ticket.getDepartment().getId());
+
+        boolean allowedCategory =
+                responsable.getAssignedCategories()
+                        .contains(ticket.getCategory().getCode());
+
+        boolean confidentialAllowed =
+                !ticket.isConfidential()
+                || responsable.isConfidentialHabilitation();
+
+        if (!sameDepartment
+                || !allowedCategory
+                || !confidentialAllowed) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+
+        // ======================================
+        // 6. VERIFIER LA TRANSITION
+        // ======================================
+
+        if (ticket.getStatus()
+                != TicketStatus.DIAGNOSTIC_EN_COURS) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ce signalement ne peut pas être soumis à validation."
+            );
+        }
+
+
+        // ======================================
+        // 7. MODIFIER LE STATUT
+        // ======================================
+
+        TicketStatus oldStatus = ticket.getStatus();
+
+        ticket.setStatus(
+                TicketStatus.ATTENTE_VALIDATION
+        );
+
+
+        // ======================================
+        // 8. ENREGISTRER L'HISTORIQUE
+        // ======================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+
+        event.setActor(actor);
+
+        event.setEventType(
+                "SOUMISSION_VALIDATION"
+        );
+
+        event.setOldStatus(oldStatus);
+
+        event.setNewStatus(
+                TicketStatus.ATTENTE_VALIDATION
+        );
+
+        event.setNote(note);
+
+
+        // ======================================
+        // 9. SAUVEGARDER
+        // ======================================
+
+        ticketRepository.saveAndFlush(ticket);
+
+        ticketEventRepository.save(event);
+
+
+        // ======================================
+        // 10. RETOURNER LE RESULTAT
+        // ======================================
+
+        return toTicketSummary(ticket);
+    }
+
+    @Transactional
+    public TicketSummary reviewTicket(
+
+            UUID employeeId,
+
+            UUID ticketId,
+
+            ReviewTicketRequest request
+
+    ) {
+
+        // =========================================
+        // 1. VERIFIER LA REQUETE
+        // =========================================
+
+        if (request == null || request.getAction() == null) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "La décision est obligatoire."
+            );
+        }
+
+        String action = request.getAction().toString();
+
+        boolean accepted =
+                "ACCEPTER_SOLUTION".equals(action);
+
+        boolean refused =
+                "REFUSER_SOLUTION".equals(action);
+
+        if (!accepted && !refused) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Décision non reconnue."
+            );
+        }
+
+
+        // =========================================
+        // 2. VERIFIER LE COMMENTAIRE
+        // =========================================
+
+        String note = request.getNote() == null
+                ? ""
+                : request.getNote().trim();
+
+        if (note.length() > 2000) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Le commentaire ne doit pas dépasser 2000 caractères."
+            );
+        }
+
+        if (refused && note.length() < 10) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Expliquez pourquoi la solution ne fonctionne pas (10 caractères minimum)."
+            );
+        }
+
+
+        // =========================================
+        // 3. VERIFIER L'EMPLOYE CONNECTE
+        // =========================================
+
+        AppUser employee = userRepository
+                .findByIdWithRoles(employeeId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Utilisateur introuvable."
+                ));
+
+        if (employee.getStatus() != AccountStatus.ACTIF) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le compte employé est désactivé."
+            );
+        }
+
+        boolean hasEmployeeRole = employee.getRoles()
+                .stream()
+                .anyMatch(role ->
+                        "EMPLOYE".equals(role.getCode())
+                );
+
+        if (!hasEmployeeRole) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Le rôle EMPLOYE est requis."
+            );
+        }
+
+
+        // =========================================
+        // 4. RECUPERER SON PROPRE SIGNALEMENT
+        // =========================================
+
+        Ticket ticket = ticketRepository
+                .findOwnedByIdForUpdate(
+                        ticketId,
+                        employeeId
+                )
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+
+        // =========================================
+        // 5. VERIFIER LE STATUT ACTUEL
+        // =========================================
+
+        if (ticket.getStatus()
+                != TicketStatus.ATTENTE_VALIDATION) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ce signalement n'est pas en attente de validation."
+            );
+        }
+
+        if (ticket.getAssignedResponsable() == null) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Aucun responsable n'est attribué à ce signalement."
+            );
+        }
+
+
+        // =========================================
+        // 6. DETERMINER LE NOUVEAU STATUT
+        // =========================================
+
+        TicketStatus oldStatus = ticket.getStatus();
+
+        TicketStatus newStatus;
+
+        String eventType;
+
+        if (accepted) {
+
+            newStatus = TicketStatus.RESOLU;
+
+            eventType = "SOLUTION_ACCEPTEE";
+
+        } else {
+
+            newStatus = TicketStatus.ROUVERT;
+
+            eventType = "SOLUTION_REFUSEE";
+        }
+
+
+        // =========================================
+        // 7. MODIFIER LE SIGNALEMENT
+        // =========================================
+
+        ticket.setStatus(newStatus);
+
+
+        // =========================================
+        // 8. ENREGISTRER L'HISTORIQUE
+        // =========================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+
+        event.setActor(employee);
+
+        event.setEventType(eventType);
+
+        event.setOldStatus(oldStatus);
+
+        event.setNewStatus(newStatus);
+
+        event.setNote(
+                note.isEmpty() ? null : note
+        );
+
+
+        // =========================================
+        // 9. ENREGISTRER DANS POSTGRESQL
+        // =========================================
+
+        ticketRepository.saveAndFlush(ticket);
+
+        ticketEventRepository.save(event);
+
+
+        // =========================================
+        // 10. RETOURNER LA REPONSE
+        // =========================================
 
         return toTicketSummary(ticket);
     }

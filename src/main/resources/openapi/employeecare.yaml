@@ -293,6 +293,56 @@ paths:
         '403':
           description: Rôle EMPLOYE requis
 
+  /employe/tickets/{ticketId}/review:
+    post:
+      tags:
+        - Espace Employé
+      summary: Accepter ou refuser la solution d'un signalement
+      description: |
+        Permet à l'employé ayant créé un signalement
+        d'accepter ou de refuser la solution proposée.
+
+        Le signalement doit être au statut ATTENTE_VALIDATION.
+
+        Si la solution est acceptée :
+        ATTENTE_VALIDATION -> RESOLU
+
+        Si la solution est refusée :
+        ATTENTE_VALIDATION -> ROUVERT
+      operationId: reviewMyTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewTicketRequest'
+      responses:
+        '200':
+          description: Décision enregistrée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Données invalides
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Signalement introuvable ou non autorisé
+        '409':
+          description: Le signalement ne peut pas être évalué
+
   /responsable/tickets:
     get:
       tags:
@@ -363,6 +413,52 @@ paths:
           description: Signalement inexistant ou hors périmètre
         '409':
           description: Signalement déjà pris en charge
+
+  /responsable/tickets/{ticketId}/status:
+    patch:
+      tags:
+        - Espace Responsable
+      summary: Soumettre un signalement à validation
+      description: |
+        Permet au responsable attribué au signalement
+        de soumettre sa solution pour validation.
+
+        Seule la transition
+        DIAGNOSTIC_EN_COURS -> ATTENTE_VALIDATION
+        est autorisée pour cette opération.
+      operationId: updateResponsableTicketStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketStatusRequest'
+      responses:
+        '200':
+          description: Statut mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Données invalides
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+        '409':
+          description: Transition de statut impossible
 
   /admin/employees:
     get:
@@ -846,3 +942,41 @@ components:
           type: boolean
           default: false
           description: Indique si le signalement est confidentiel
+
+    UpdateTicketStatusRequest:
+      type: object
+      required:
+        - status
+        - note
+      properties:
+        status:
+          type: string
+          enum:
+            - ATTENTE_VALIDATION
+        note:
+          type: string
+          minLength: 10
+          maxLength: 2000
+          description: |
+            Explication du traitement réalisé
+            et de la solution proposée.
+
+    ReviewTicketRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - ACCEPTER_SOLUTION
+            - REFUSER_SOLUTION
+        note:
+          type: string
+          maxLength: 2000
+          description: |
+            Commentaire de l'employé.
+
+            Facultatif lorsque la solution est acceptée.
+            Obligatoire lorsque la solution est refusée,
+            avec au moins 10 caractères.

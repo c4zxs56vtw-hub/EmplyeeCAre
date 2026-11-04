@@ -1,6 +1,7 @@
 package com.employeecare.api.ticket.controller;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
+import com.employeecare.api.generated.models.ReviewTicketRequest;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.ticket.service.TicketService;
 import org.junit.jupiter.api.AfterEach;
@@ -111,6 +112,46 @@ class EmployeeTicketControllerTest {
         CreateTicketRequest request = new CreateTicketRequest();
 
         assertThatThrownBy(() -> controller.createMyEmployeeTicket(request))
+                .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("reviewMyTicket - Retourne 200 OK avec le signalement évalué")
+    void reviewMyTicket_shouldReturn200() {
+        UUID employeeId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(employeeId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        ReviewTicketRequest request = new ReviewTicketRequest()
+                .action(ReviewTicketRequest.ActionEnum.ACCEPTER_SOLUTION);
+
+        TicketSummary expected = new TicketSummary()
+                .id(ticketId.toString())
+                .reference("SIG-2026-000001")
+                .status(TicketSummary.StatusEnum.RESOLU);
+
+        when(ticketService.reviewTicket(employeeId, ticketId, request)).thenReturn(expected);
+
+        ResponseEntity<TicketSummary> response = controller.reviewMyTicket(ticketId, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isSameAs(expected);
+    }
+
+    @Test
+    @DisplayName("reviewMyTicket - Sans authentification JWT lève AuthenticationCredentialsNotFoundException")
+    void reviewMyTicket_withoutJwt_shouldThrow() {
+        SecurityContextHolder.clearContext();
+        UUID ticketId = UUID.randomUUID();
+        ReviewTicketRequest request = new ReviewTicketRequest();
+
+        assertThatThrownBy(() -> controller.reviewMyTicket(ticketId, request))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
     }
 }
