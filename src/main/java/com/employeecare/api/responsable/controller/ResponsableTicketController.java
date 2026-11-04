@@ -2,6 +2,7 @@ package com.employeecare.api.responsable.controller;
 
 import com.employeecare.api.generated.apis.EspaceResponsableApi;
 
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
@@ -209,5 +210,36 @@ public class ResponsableTicketController
         // 4. Retourner la réponse
 
         return ResponseEntity.ok(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('RESPONSABLE')")
+    public ResponseEntity<List<TicketHistoryEvent>> getResponsableTicketHistory(
+            @PathVariable("ticketId") UUID ticketId
+    ) {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        UUID responsableId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        List<TicketHistoryEvent> history =
+                ticketService.getResponsableTicketHistory(
+                        responsableId,
+                        ticketId
+                );
+
+        return ResponseEntity.ok(history);
     }
 }

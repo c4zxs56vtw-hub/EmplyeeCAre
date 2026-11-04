@@ -2,6 +2,7 @@ package com.employeecare.api.ticket.service;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
@@ -229,7 +230,37 @@ public class TicketService {
 
         // 9. Enregistrer dans PostgreSQL
 
-        Ticket savedTicket = ticketRepository.saveAndFlush(ticket);
+        // 1. Enregistrer le signalement.
+
+        Ticket savedTicket =
+                ticketRepository.saveAndFlush(ticket);
+
+
+        // 2. Créer l'événement de création.
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(savedTicket);
+
+        event.setActor(employee);
+
+        event.setEventType(
+                "CREATION_SIGNALEMENT"
+        );
+
+        event.setOldStatus(null);
+
+        event.setNewStatus(
+                TicketStatus.EN_ATTENTE
+        );
+
+
+        // 3. Enregistrer l'événement.
+
+        ticketEventRepository.save(event);
+
+
+        // 4. Retourner la réponse.
 
         return toTicketSummary(savedTicket);
     }
@@ -1210,6 +1241,188 @@ public class TicketService {
         // ==========================================
 
         return toTicketSummary(ticket);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketHistoryEvent> getMyTicketHistory(
+            UUID employeeId,
+            UUID ticketId
+    ) {
+
+        // 1. Vérifier que le signalement appartient à l'employé.
+
+        boolean isOwner = ticketRepository
+                .existsByIdAndEmployee_Id(
+                        ticketId,
+                        employeeId
+                );
+
+        if (!isOwner) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        // 2. Récupérer l'historique.
+
+        return loadTicketHistory(ticketId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TicketHistoryEvent> getResponsableTicketHistory(
+            UUID responsableId,
+            UUID ticketId
+    ) {
+
+        // 1. Vérifier le profil responsable.
+
+        ResponsableAccount responsable =
+                responsableAccountRepository
+                        .findById(responsableId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Signalement introuvable."
+                        ));
+
+        if (!responsable.isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        // 2. Récupérer le signalement.
+
+        Ticket ticket = ticketRepository
+                .findById(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Signalement introuvable."
+                ));
+
+        // 3. Vérifier que le signalement lui est attribué.
+
+        boolean isAssigned =
+                ticket.getAssignedResponsable() != null
+                && ticket.getAssignedResponsable()
+                        .getId()
+                        .equals(responsableId);
+
+        // 4. Vérifier le département.
+
+        boolean sameDepartment =
+                responsable.getDepartment() != null
+                && responsable.getDepartment()
+                        .getId()
+                        .equals(ticket.getDepartment().getId());
+
+        // 5. Vérifier la catégorie.
+
+        boolean allowedCategory =
+                responsable.getAssignedCategories()
+                        .contains(ticket.getCategory().getCode());
+
+        // 6. Vérifier la confidentialité.
+
+        boolean confidentialAllowed =
+                !ticket.isConfidential()
+                || responsable.isConfidentialHabilitation();
+
+        // 7. Refuser tout accès non autorisé.
+
+        if (!isAssigned
+                || !sameDepartment
+                || !allowedCategory
+                || !confidentialAllowed) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Signalement introuvable."
+            );
+        }
+
+        // 8. Récupérer l'historique.
+
+        return loadTicketHistory(ticketId);
+    }
+
+    private List<TicketHistoryEvent> loadTicketHistory(
+            UUID ticketId
+    ) {
+
+        List<TicketEvent> events =
+                ticketEventRepository
+                        .findHistoryByTicketId(ticketId);
+
+        return events.stream()
+                .map(this::toHistoryEvent)
+                .toList();
+    }
+
+    private TicketHistoryEvent toHistoryEvent(
+            TicketEvent event
+    ) {
+
+        TicketHistoryEvent response =
+                new TicketHistoryEvent();
+
+        response.setId(
+                event.getId().toString()
+        );
+
+        response.setEventType(
+                event.getEventType()
+        );
+
+        // Ne pas exposer directement les données personnelles.
+
+        response.setActorLabel(
+                getActorLabel(event.getEventType())
+        );
+
+        if (event.getOldStatus() != null) {
+
+            response.setPreviousStatus(
+                    event.getOldStatus().name()
+            );
+        }
+
+        if (event.getNewStatus() != null) {
+
+            response.setNewStatus(
+                    event.getNewStatus().name()
+            );
+        }
+
+        response.setNote(
+                event.getNote()
+        );
+
+        response.setOccurredAt(
+                event.getCreatedAt().toString()
+        );
+
+        return response;
+    }
+
+    private String getActorLabel(String eventType) {
+
+        return switch (eventType) {
+
+            case "PRISE_EN_CHARGE",
+                 "SOUMISSION_VALIDATION",
+                 "REPRISE_TRAITEMENT" -> "Responsable";
+
+            case "CREATION_SIGNALEMENT",
+                 "SOLUTION_ACCEPTEE",
+                 "SOLUTION_REFUSEE",
+                 "CLOTURE_SIGNALEMENT" -> "Employé";
+
+            default -> "Intervenant";
+        };
     }
 
     private TicketSummary toTicketSummary(Ticket ticket) {

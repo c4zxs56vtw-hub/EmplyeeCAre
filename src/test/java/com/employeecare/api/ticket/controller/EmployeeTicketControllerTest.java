@@ -2,6 +2,7 @@ package com.employeecare.api.ticket.controller;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.ticket.service.TicketService;
 import org.junit.jupiter.api.AfterEach;
@@ -189,5 +190,31 @@ class EmployeeTicketControllerTest {
 
         assertThatThrownBy(() -> controller.closeMyTicket(ticketId))
                 .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("getMyTicketHistory - Retourne 200 OK avec l'historique du signalement")
+    void getMyTicketHistory_shouldReturn200() {
+        UUID employeeId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(employeeId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        TicketHistoryEvent event = new TicketHistoryEvent()
+                .id(UUID.randomUUID().toString())
+                .eventType("CREATION_SIGNALEMENT")
+                .actorLabel("Employé");
+
+        when(ticketService.getMyTicketHistory(employeeId, ticketId)).thenReturn(List.of(event));
+
+        ResponseEntity<List<TicketHistoryEvent>> response = controller.getMyTicketHistory(ticketId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsExactly(event);
     }
 }
