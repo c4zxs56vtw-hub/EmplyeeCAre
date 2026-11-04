@@ -460,6 +460,49 @@ paths:
         '409':
           description: Transition de statut impossible
 
+  /responsable/tickets/{ticketId}/resume:
+    post:
+      tags:
+        - Espace Responsable
+      summary: Reprendre le traitement d'un signalement rouvert
+      description: |
+        Permet au responsable attribué au signalement
+        de reprendre son traitement lorsque le statut
+        est ROUVERT.
+
+        Seule la transition :
+
+        ROUVERT -> DIAGNOSTIC_EN_COURS
+
+        est autorisée.
+      operationId: resumeTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Traitement repris
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummary'
+        '400':
+          description: Identifiant invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+        '409':
+          description: Signalement non rouvert
+
   /admin/employees:
     get:
       tags:

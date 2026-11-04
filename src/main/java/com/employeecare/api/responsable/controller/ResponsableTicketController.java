@@ -170,4 +170,44 @@ public class ResponsableTicketController
 
         return ResponseEntity.ok(response);
     }
+
+    @Override
+    @PreAuthorize("hasRole('RESPONSABLE')")
+    public ResponseEntity<TicketSummary> resumeTicket(
+
+            @PathVariable("ticketId") UUID ticketId
+    ) {
+
+        // 1. Récupérer l'authentification
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        // 2. Identifier le responsable connecté
+
+        UUID responsableId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        // 3. Reprendre le traitement du signalement
+
+        TicketSummary response =
+                ticketService.resumeTicket(
+                        responsableId,
+                        ticketId
+                );
+
+        // 4. Retourner la réponse
+
+        return ResponseEntity.ok(response);
+    }
 }
