@@ -7,6 +7,7 @@ import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 import com.employeecare.api.notification.event.TicketEmailNotificationEvent;
+import com.employeecare.api.notification.event.TicketResponsibleNotificationEvent;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 import com.employeecare.api.ticket.entity.Ticket;
@@ -138,6 +139,11 @@ class TicketServiceTest {
         assertThat(summary.getStatus()).isEqualTo(TicketSummary.StatusEnum.EN_ATTENTE);
         assertThat(summary.getIsConfidential()).isFalse();
         assertThat(summary.getCreatedAt()).isEqualTo("04/11/2026");
+
+        verify(eventPublisher).publishEvent(new TicketResponsibleNotificationEvent(
+                ticketId,
+                TicketResponsibleNotificationEvent.Type.NOUVEAU_SIGNALEMENT
+        ));
     }
 
     @Test
@@ -635,6 +641,11 @@ class TicketServiceTest {
         assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
         assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.ROUVERT);
         assertThat(savedEvent.getNote()).isEqualTo("Le problème de connexion persiste malgré l'intervention.");
+
+        verify(eventPublisher).publishEvent(new TicketResponsibleNotificationEvent(
+                ticketId,
+                TicketResponsibleNotificationEvent.Type.SOLUTION_REFUSEE
+        ));
     }
 
     @Test

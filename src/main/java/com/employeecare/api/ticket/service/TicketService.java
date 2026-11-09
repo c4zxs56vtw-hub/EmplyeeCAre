@@ -7,6 +7,7 @@ import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
 import com.employeecare.api.notification.event.TicketEmailNotificationEvent;
+import com.employeecare.api.notification.event.TicketResponsibleNotificationEvent;
 
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
@@ -266,6 +267,19 @@ public class TicketService {
         // 3. Enregistrer l'événement.
 
         ticketEventRepository.save(event);
+
+
+        // Notifier les responsables habilités.
+
+        eventPublisher.publishEvent(
+
+                new TicketResponsibleNotificationEvent(
+
+                        savedTicket.getId(),
+
+                        TicketResponsibleNotificationEvent.Type.NOUVEAU_SIGNALEMENT
+                )
+        );
 
 
         // 4. Retourner la réponse.
@@ -935,6 +949,22 @@ public class TicketService {
         ticketRepository.saveAndFlush(ticket);
 
         ticketEventRepository.save(event);
+
+
+        // Notifier le responsable si la solution est refusée.
+
+        if (refused) {
+
+            eventPublisher.publishEvent(
+
+                    new TicketResponsibleNotificationEvent(
+
+                            ticket.getId(),
+
+                            TicketResponsibleNotificationEvent.Type.SOLUTION_REFUSEE
+                    )
+            );
+        }
 
 
         // =========================================

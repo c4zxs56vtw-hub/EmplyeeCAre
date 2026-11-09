@@ -33,25 +33,46 @@ public class TicketNotificationEmailService {
             String recipientEmail,
             String message
     ) {
-        String subject = "EmployeeCare - Mise à jour de votre signalement";
+
+        sendNotification(
+                recipientEmail,
+                "EmployeeCare - Mise à jour de votre signalement",
+                message
+        );
+    }
+
+    public void sendNotification(
+            String recipientEmail,
+            String subject,
+            String message
+    ) {
 
         Map<String, Object> payload = Map.of(
+
                 "sender", Map.of(
                         "name", senderName,
                         "email", senderEmail
                 ),
+
                 "to", List.of(
                         Map.of("email", recipientEmail)
                 ),
+
                 "subject", subject,
+
                 "textContent", message
         );
 
         restClient.post()
+
                 .uri("/smtp/email")
+
                 .contentType(MediaType.APPLICATION_JSON)
+
                 .body(payload)
+
                 .retrieve()
+
                 .toBodilessEntity();
     }
 }
