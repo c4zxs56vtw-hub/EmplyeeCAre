@@ -1439,9 +1439,15 @@ public class TicketService {
 
         // Ne pas exposer directement les données personnelles.
 
-        response.setActorLabel(
-                getActorLabel(event.getEventType())
-        );
+        if ("ANONYMOUS".equals(event.getActorKind())) {
+            response.setActorLabel(
+                    "Déclarant anonyme"
+            );
+        } else {
+            response.setActorLabel(
+                    getActorLabel(event.getEventType())
+            );
+        }
 
         if (event.getOldStatus() != null) {
 

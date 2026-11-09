@@ -85,4 +85,8 @@ public interface TicketRepository
             UUID employeeId
     );
 
+    Optional<Ticket> findByReferenceAndAnonymousTrue(
+            String reference
+    );
+
 }

@@ -938,6 +938,112 @@ paths:
         '429':
           description: Trop de demandes
 
+  /public/tickets/anonymous/lookup:
+    post:
+      tags:
+        - Public
+      summary: Consulter un signalement anonyme
+      description: |
+        Permet de consulter un signalement anonyme
+        avec sa référence et son code secret.
+
+        Aucun compte utilisateur n'est nécessaire.
+        Le code secret est transmis dans le corps
+        de la requête et jamais dans l'URL.
+      operationId: lookupAnonymousTicket
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketLookupRequest'
+      responses:
+        '200':
+          description: Signalement retrouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnonymousTicketLookupResponse'
+        '400':
+          description: Requête invalide
+        '404':
+          description: Référence ou code de suivi invalide
+
+  /public/tickets/anonymous/review:
+    post:
+      tags:
+        - Public
+      summary: Accepter ou refuser une solution anonyme
+      operationId: reviewAnonymousTicket
+      description: |
+        Permet au déclarant anonyme d'accepter ou
+        de refuser la solution proposée.
+
+        La référence et le code secret sont obligatoires.
+
+        ACCEPTER_SOLUTION :
+        ATTENTE_VALIDATION -> RESOLU
+
+        REFUSER_SOLUTION :
+        ATTENTE_VALIDATION -> ROUVERT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketReviewRequest'
+      responses:
+        '200':
+          description: Décision enregistrée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnonymousTicketActionResponse'
+        '400':
+          description: Décision ou commentaire invalide
+        '404':
+          description: Référence ou code secret invalide
+        '409':
+          description: Transition de statut impossible
+        '429':
+          description: Trop de tentatives
+
+  /public/tickets/anonymous/close:
+    post:
+      tags:
+        - Public
+      summary: Clôturer un signalement anonyme
+      operationId: closeAnonymousTicket
+      description: |
+        Permet au déclarant anonyme de clôturer
+        un signalement dont la solution a été acceptée.
+
+        Seule la transition RESOLU -> CLOTURE est autorisée.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymousTicketCloseRequest'
+      responses:
+        '200':
+          description: Signalement clôturé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnonymousTicketActionResponse'
+        '400':
+          description: Requête invalide
+        '404':
+          description: Référence ou code secret invalide
+        '409':
+          description: Signalement non clôturable
+        '429':
+          description: Trop de tentatives
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1444,3 +1550,106 @@ components:
           description: |
             Code secret de suivi.
             Communiqué une seule fois.
+
+    AnonymousTicketLookupRequest:
+      type: object
+      required:
+        - reference
+        - accessCode
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 40
+          example: SIG-2026-000125
+        accessCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: |
+            Code secret généré lors de la création
+            du signalement anonyme.
+
+    AnonymousTicketLookupResponse:
+      type: object
+      required:
+        - reference
+        - title
+        - status
+        - createdAt
+      properties:
+        reference:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          description: Statut actuel du signalement
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        solutionNote:
+          type: string
+          nullable: true
+          description: |
+            Dernière solution proposée par le responsable.
+            Renseignée uniquement lorsque le signalement
+            attend la validation du déclarant.
+
+    AnonymousTicketReviewRequest:
+      type: object
+      required:
+        - reference
+        - accessCode
+        - action
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 40
+        accessCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+        action:
+          type: string
+          enum:
+            - ACCEPTER_SOLUTION
+            - REFUSER_SOLUTION
+        note:
+          type: string
+          maxLength: 2000
+          description: |
+            Commentaire facultatif si la solution est acceptée.
+            Obligatoire avec au moins 10 caractères
+            si la solution est refusée.
+
+    AnonymousTicketCloseRequest:
+      type: object
+      required:
+        - reference
+        - accessCode
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 40
+        accessCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    AnonymousTicketActionResponse:
+      type: object
+      required:
+        - reference
+        - status
+      properties:
+        reference:
+          type: string
+        status:
+          type: string
+          description: Nouveau statut du signalement

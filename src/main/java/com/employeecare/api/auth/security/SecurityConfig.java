@@ -76,6 +76,21 @@ public class SecurityConfig {
                                 "/public/tickets/anonymous"
                         ).permitAll()
 
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/public/tickets/anonymous/lookup"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/public/tickets/anonymous/review"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/public/tickets/anonymous/close"
+                        ).permitAll()
+
                         // Administration
                         .requestMatchers("/admin/**")
                         .hasRole("ADMINISTRATEUR")

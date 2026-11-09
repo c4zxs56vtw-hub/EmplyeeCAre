@@ -1,7 +1,12 @@
 package com.employeecare.api.ticket.service;
 
 import com.employeecare.api.department.entity.Department;
+import com.employeecare.api.generated.models.AnonymousTicketActionResponse;
+import com.employeecare.api.generated.models.AnonymousTicketCloseRequest;
 import com.employeecare.api.generated.models.AnonymousTicketCreatedResponse;
+import com.employeecare.api.generated.models.AnonymousTicketLookupRequest;
+import com.employeecare.api.generated.models.AnonymousTicketLookupResponse;
+import com.employeecare.api.generated.models.AnonymousTicketReviewRequest;
 import com.employeecare.api.generated.models.CreateAnonymousTicketRequest;
 import com.employeecare.api.notification.event.TicketResponsibleNotificationEvent;
 import com.employeecare.api.ticket.entity.Ticket;
@@ -14,6 +19,7 @@ import com.employeecare.api.ticket.repository.TicketEventRepository;
 import com.employeecare.api.ticket.repository.TicketRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -24,8 +30,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.OffsetDateTime;
 import java.time.Year;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
@@ -230,6 +238,442 @@ public class AnonymousTicketService {
         response.setAccessCode(accessCode);
 
         return response;
+    }
+
+    @Transactional(readOnly = true)
+    public AnonymousTicketLookupResponse lookupAnonymousTicket(
+            AnonymousTicketLookupRequest request
+    ) {
+
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Les informations de suivi sont obligatoires."
+            );
+        }
+
+        Ticket ticket = verifyAnonymousAccess(
+                request.getReference(),
+                request.getAccessCode()
+        );
+
+        // ==========================================
+        // CONSTRUIRE LA REPONSE
+        // ==========================================
+
+        AnonymousTicketLookupResponse response =
+                new AnonymousTicketLookupResponse();
+
+        response.setReference(
+                ticket.getReference()
+        );
+
+        response.setTitle(
+                ticket.getTitle()
+        );
+
+        response.setStatus(
+                ticket.getStatus().name()
+        );
+
+        response.setCreatedAt(
+                OffsetDateTime.ofInstant(
+                        ticket.getCreatedAt(),
+                        ZoneOffset.UTC
+                )
+        );
+
+        if (ticket.getUpdatedAt() != null) {
+            response.setUpdatedAt(
+                    OffsetDateTime.ofInstant(
+                            ticket.getUpdatedAt(),
+                            ZoneOffset.UTC
+                    )
+            );
+        }
+
+        // ==========================================
+        // RECUPERER LA SOLUTION EVENTUELLE
+        // ==========================================
+
+        if (ticket.getStatus() == TicketStatus.ATTENTE_VALIDATION) {
+
+            eventRepository
+                    .findFirstByTicket_IdAndEventTypeOrderByCreatedAtDescIdDesc(
+                            ticket.getId(),
+                            "SOUMISSION_VALIDATION"
+                    )
+                    .ifPresent(event ->
+                            response.setSolutionNote(
+                                    event.getNote()
+                            )
+                    );
+        }
+
+        return response;
+    }
+
+    @Transactional
+    public AnonymousTicketActionResponse reviewAnonymousTicket(
+            AnonymousTicketReviewRequest request
+    ) {
+
+        // ==========================================
+        // 1. VERIFIER LA REQUETE
+        // ==========================================
+
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Les informations sont obligatoires."
+            );
+        }
+
+        // ==========================================
+        // 2. VERIFIER LE CODE ET VERROUILLER
+        // ==========================================
+
+        Ticket ticket = lockVerifiedAnonymousTicket(
+                request.getReference(),
+                request.getAccessCode()
+        );
+
+        // ==========================================
+        // 3. VERIFIER LA DECISION
+        // ==========================================
+
+        if (request.getAction() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "La décision est obligatoire."
+            );
+        }
+
+        String action = request.getAction().toString();
+
+        boolean accepted =
+                "ACCEPTER_SOLUTION".equals(action);
+
+        boolean refused =
+                "REFUSER_SOLUTION".equals(action);
+
+        if (!accepted && !refused) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Décision invalide."
+            );
+        }
+
+        // ==========================================
+        // 4. VERIFIER LE COMMENTAIRE
+        // ==========================================
+
+        String note = request.getNote() == null
+                ? ""
+                : request.getNote().trim();
+
+        if (note.length() > 2000) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Le commentaire dépasse 2000 caractères."
+            );
+        }
+
+        if (refused && note.length() < 10) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Expliquez pourquoi la solution est refusée."
+            );
+        }
+
+        // ==========================================
+        // 5. VERIFIER LE STATUT
+        // ==========================================
+
+        if (ticket.getStatus() != TicketStatus.ATTENTE_VALIDATION) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ce signalement n'attend pas de validation."
+            );
+        }
+
+        if (ticket.getAssignedResponsable() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Aucun responsable n'est attribué au dossier."
+            );
+        }
+
+        // ==========================================
+        // 6. DETERMINER LE NOUVEAU STATUT
+        // ==========================================
+
+        TicketStatus oldStatus = ticket.getStatus();
+
+        TicketStatus newStatus = accepted
+                ? TicketStatus.RESOLU
+                : TicketStatus.ROUVERT;
+
+        String eventType = accepted
+                ? "SOLUTION_ACCEPTEE"
+                : "SOLUTION_REFUSEE";
+
+        // ==========================================
+        // 7. MODIFIER LE SIGNALEMENT
+        // ==========================================
+
+        ticket.setStatus(newStatus);
+
+        // ==========================================
+        // 8. CREER L'EVENEMENT D'HISTORIQUE
+        // ==========================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+
+        // Aucun compte utilisateur identifié.
+        event.setActor(null);
+        event.setActorKind("ANONYMOUS");
+
+        event.setEventType(eventType);
+        event.setOldStatus(oldStatus);
+        event.setNewStatus(newStatus);
+        event.setNote(
+                note.isBlank() ? null : note
+        );
+
+        // ==========================================
+        // 9. ENREGISTRER LES MODIFICATIONS
+        // ==========================================
+
+        ticketRepository.saveAndFlush(ticket);
+        eventRepository.save(event);
+
+        // ==========================================
+        // 10. NOTIFIER LE RESPONSABLE EN CAS DE REFUS
+        // ==========================================
+
+        if (refused) {
+            eventPublisher.publishEvent(
+                    new TicketResponsibleNotificationEvent(
+                            ticket.getId(),
+                            TicketResponsibleNotificationEvent.Type
+                                    .SOLUTION_REFUSEE
+                    )
+            );
+        }
+
+        // ==========================================
+        // 11. RETOURNER LE RESULTAT
+        // ==========================================
+
+        return toActionResponse(ticket);
+    }
+
+    @Transactional
+    public AnonymousTicketActionResponse closeAnonymousTicket(
+            AnonymousTicketCloseRequest request
+    ) {
+
+        // ==========================================
+        // 1. VERIFIER LA REQUETE
+        // ==========================================
+
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Les informations sont obligatoires."
+            );
+        }
+
+        // ==========================================
+        // 2. VERIFIER LE CODE ET VERROUILLER
+        // ==========================================
+
+        Ticket ticket = lockVerifiedAnonymousTicket(
+                request.getReference(),
+                request.getAccessCode()
+        );
+
+        // ==========================================
+        // 3. VERIFIER LE STATUT
+        // ==========================================
+
+        if (ticket.getStatus() != TicketStatus.RESOLU) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Seul un signalement résolu peut être clôturé."
+            );
+        }
+
+        // ==========================================
+        // 4. MODIFIER LE STATUT
+        // ==========================================
+
+        TicketStatus oldStatus = ticket.getStatus();
+
+        ticket.setStatus(TicketStatus.CLOTURE);
+
+        // ==========================================
+        // 5. ENREGISTRER L'HISTORIQUE
+        // ==========================================
+
+        TicketEvent event = new TicketEvent();
+
+        event.setTicket(ticket);
+        event.setActor(null);
+        event.setActorKind("ANONYMOUS");
+        event.setEventType(
+                "CLOTURE_SIGNALEMENT"
+        );
+        event.setOldStatus(oldStatus);
+        event.setNewStatus(
+                TicketStatus.CLOTURE
+        );
+
+        // ==========================================
+        // 6. SAUVEGARDER
+        // ==========================================
+
+        ticketRepository.saveAndFlush(ticket);
+        eventRepository.save(event);
+
+        // ==========================================
+        // 7. RETOURNER LE RESULTAT
+        // ==========================================
+
+        return toActionResponse(ticket);
+    }
+
+    private Ticket verifyAnonymousAccess(
+            String referenceInput,
+            String accessCodeInput
+    ) {
+
+        // 1. Nettoyer les informations reçues.
+
+        String reference = referenceInput == null
+                ? ""
+                : referenceInput.trim();
+
+        String accessCode = accessCodeInput == null
+                ? ""
+                : accessCodeInput.trim();
+
+        // 2. Vérifier les formats.
+
+        if (reference.isBlank()
+                || reference.length() > 40
+                || accessCode.isBlank()
+                || accessCode.length() > 128) {
+
+            throw invalidTrackingCredentials();
+        }
+
+        // 3. Rechercher uniquement un dossier anonyme.
+
+        Ticket ticket = ticketRepository
+                .findByReferenceAndAnonymousTrue(reference)
+                .orElseThrow(
+                        this::invalidTrackingCredentials
+                );
+
+        // 4. Récupérer l'empreinte enregistrée.
+
+        String storedHash;
+
+        try {
+            storedHash = jdbcTemplate.queryForObject(
+                    """
+                    SELECT access_key_hash
+                    FROM anonymous_ticket_access
+                    WHERE ticket_id = ?
+                    """,
+                    String.class,
+                    ticket.getId()
+            );
+        } catch (EmptyResultDataAccessException exception) {
+            throw invalidTrackingCredentials();
+        }
+
+        if (storedHash == null) {
+            throw invalidTrackingCredentials();
+        }
+
+        // 5. Calculer l'empreinte du code fourni.
+
+        String providedHash = sha256(accessCode);
+
+        // 6. Comparer les empreintes.
+
+        byte[] expected = storedHash.trim()
+                .getBytes(StandardCharsets.US_ASCII);
+
+        byte[] provided = providedHash
+                .getBytes(StandardCharsets.US_ASCII);
+
+        if (!MessageDigest.isEqual(expected, provided)) {
+            throw invalidTrackingCredentials();
+        }
+
+        // 7. Retourner le signalement autorisé.
+
+        return ticket;
+    }
+
+    private Ticket lockVerifiedAnonymousTicket(
+            String reference,
+            String accessCode
+    ) {
+
+        // 1. Vérifier la référence et le secret.
+
+        Ticket verifiedTicket = verifyAnonymousAccess(
+                reference,
+                accessCode
+        );
+
+        // 2. Verrouiller le signalement en base.
+
+        Ticket ticket = ticketRepository
+                .findByIdForUpdate(verifiedTicket.getId())
+                .orElseThrow(
+                        this::invalidTrackingCredentials
+                );
+
+        // 3. Vérifier qu'il reste anonyme.
+
+        if (!ticket.isAnonymous()
+                || ticket.getEmployee() != null) {
+
+            throw invalidTrackingCredentials();
+        }
+
+        return ticket;
+    }
+
+    private AnonymousTicketActionResponse toActionResponse(
+            Ticket ticket
+    ) {
+        AnonymousTicketActionResponse response =
+                new AnonymousTicketActionResponse();
+
+        response.setReference(
+                ticket.getReference()
+        );
+        response.setStatus(
+                ticket.getStatus().name()
+        );
+
+        return response;
+    }
+
+    private ResponseStatusException invalidTrackingCredentials() {
+        return new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Référence ou code de suivi invalide."
+        );
     }
 
     private String sha256(String value) {

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TicketEventRepository
@@ -20,5 +21,10 @@ public interface TicketEventRepository
         """)
     List<TicketEvent> findHistoryByTicketId(
             @Param("ticketId") UUID ticketId
+    );
+
+    Optional<TicketEvent> findFirstByTicket_IdAndEventTypeOrderByCreatedAtDescIdDesc(
+            UUID ticketId,
+            String eventType
     );
 }
