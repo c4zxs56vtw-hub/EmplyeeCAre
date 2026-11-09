@@ -4,9 +4,11 @@ import com.employeecare.api.generated.apis.EspaceEmployApi;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketAttachmentResponse;
 import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 
+import com.employeecare.api.ticket.service.TicketAttachmentService;
 import com.employeecare.api.ticket.service.TicketService;
 
 import jakarta.validation.Valid;
@@ -22,7 +24,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -31,9 +35,14 @@ import java.util.UUID;
 public class EmployeeTicketController implements EspaceEmployApi {
 
     private final TicketService ticketService;
+    private final TicketAttachmentService attachmentService;
 
-    public EmployeeTicketController(TicketService ticketService) {
+    public EmployeeTicketController(
+            TicketService ticketService,
+            TicketAttachmentService attachmentService
+    ) {
         this.ticketService = ticketService;
+        this.attachmentService = attachmentService;
     }
 
     @Override
@@ -250,5 +259,48 @@ public class EmployeeTicketController implements EspaceEmployApi {
                 );
 
         return ResponseEntity.ok(history);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<TicketAttachmentResponse> uploadMyTicketAttachment(
+            @PathVariable("ticketId") UUID ticketId,
+            @RequestPart("file") MultipartFile file
+    ) {
+
+        // 1. Récupérer l'authentification.
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        // 2. Identifier l'employé connecté.
+
+        UUID employeeId = UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
+
+        // 3. Enregistrer la pièce jointe.
+
+        TicketAttachmentResponse response =
+                attachmentService.upload(
+                        employeeId,
+                        ticketId,
+                        file
+                );
+
+        // 4. Retourner HTTP 201.
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(response);
     }
 }

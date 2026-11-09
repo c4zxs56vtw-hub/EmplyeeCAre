@@ -2,8 +2,10 @@ package com.employeecare.api.ticket.controller;
 
 import com.employeecare.api.generated.models.CreateTicketRequest;
 import com.employeecare.api.generated.models.ReviewTicketRequest;
+import com.employeecare.api.generated.models.TicketAttachmentResponse;
 import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
+import com.employeecare.api.ticket.service.TicketAttachmentService;
 import com.employeecare.api.ticket.service.TicketService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +16,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -32,6 +35,9 @@ class EmployeeTicketControllerTest {
 
     @Mock
     private TicketService ticketService;
+
+    @Mock
+    private TicketAttachmentService attachmentService;
 
     @InjectMocks
     private EmployeeTicketController controller;
@@ -216,5 +222,42 @@ class EmployeeTicketControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsExactly(event);
+    }
+
+    @Test
+    @DisplayName("uploadMyTicketAttachment - Retourne 201 Created avec la pièce jointe enregistrée")
+    void uploadMyTicketAttachment_shouldReturn201() {
+        UUID employeeId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
+        UUID attachmentId = UUID.randomUUID();
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .subject(employeeId.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "erreur.pdf",
+                "application/pdf",
+                "%PDF-1.7 test".getBytes()
+        );
+
+        TicketAttachmentResponse expected = new TicketAttachmentResponse()
+                .id(attachmentId)
+                .fileName("erreur.pdf")
+                .contentType("application/pdf")
+                .sizeBytes((long) file.getSize());
+
+        when(attachmentService.upload(employeeId, ticketId, file)).thenReturn(expected);
+
+        ResponseEntity<TicketAttachmentResponse> response =
+                controller.uploadMyTicketAttachment(ticketId, file);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isSameAs(expected);
     }
 }

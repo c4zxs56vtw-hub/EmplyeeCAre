@@ -419,6 +419,53 @@ paths:
         '404':
           description: Signalement inexistant ou non autorisé
 
+  /employe/tickets/{ticketId}/attachments:
+    post:
+      tags:
+        - Espace Employé
+      summary: Ajouter une pièce jointe à un signalement
+      operationId: uploadMyTicketAttachment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Pièce jointe enregistrée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketAttachmentResponse'
+        '400':
+          description: Fichier invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+        '409':
+          description: Ajout impossible
+        '413':
+          description: Fichier trop volumineux
+
   /responsable/tickets:
     get:
       tags:
@@ -1170,3 +1217,26 @@ components:
           type: string
           description: Date UTC au format ISO 8601
           example: "2026-11-04T09:15:00Z"
+
+    TicketAttachmentResponse:
+      type: object
+      required:
+        - id
+        - fileName
+        - contentType
+        - sizeBytes
+        - uploadedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        uploadedAt:
+          type: string
+          format: date-time
