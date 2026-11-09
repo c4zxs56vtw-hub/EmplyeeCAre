@@ -15,7 +15,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -80,5 +82,30 @@ class TicketResponsibleNotificationListenerTest {
                 messageCaptor.capture()
         );
         assertThat(messageCaptor.getValue()).contains("Une solution proposée pour un");
+    }
+
+    @Test
+    @DisplayName("handle - L'échec sur un destinataire n'empêche pas l'envoi aux autres")
+    void handle_whenFirstRecipientFails_shouldStillSendToSecondRecipient() {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponsibleNotificationEvent event = new TicketResponsibleNotificationEvent(
+                ticketId,
+                TicketResponsibleNotificationEvent.Type.NOUVEAU_SIGNALEMENT
+        );
+
+        when(recipientService.findRecipients(event))
+                .thenReturn(List.of("paul@entreprise.com", "sophie@entreprise.com"));
+
+        doThrow(new RuntimeException("Timeout Brevo"))
+                .when(emailService)
+                .sendNotification(eq("paul@entreprise.com"), anyString(), anyString());
+
+        listener.handle(event);
+
+        verify(emailService).sendNotification(
+                eq("sophie@entreprise.com"),
+                eq("EmployeeCare - Nouveau signalement disponible"),
+                anyString()
+        );
     }
 }

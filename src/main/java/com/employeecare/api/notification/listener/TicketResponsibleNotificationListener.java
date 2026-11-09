@@ -7,6 +7,7 @@ import com.employeecare.api.notification.service.TicketResponsibleRecipientServi
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import org.springframework.transaction.event.TransactionPhase;
@@ -36,6 +37,7 @@ public class TicketResponsibleNotificationListener {
         this.emailService = emailService;
     }
 
+    @Async("notificationExecutor")
     @TransactionalEventListener(
             phase = TransactionPhase.AFTER_COMMIT
     )
@@ -73,21 +75,21 @@ public class TicketResponsibleNotificationListener {
                             event.type()
                     );
 
-                } catch (RuntimeException exception) {
+                } catch (Exception exception) {
 
                     log.error(
-                            "Échec d'envoi d'une notification responsable : {}",
+                            "Échec d'une notification Brevo : type={}, typeErreur={}",
                             event.type(),
-                            exception
+                            exception.getClass().getSimpleName()
                     );
                 }
             }
 
-        } catch (RuntimeException exception) {
+        } catch (Exception exception) {
 
             log.error(
-                    "Échec du traitement des notifications responsables.",
-                    exception
+                    "Échec du traitement des notifications responsables : typeErreur={}",
+                    exception.getClass().getSimpleName()
             );
         }
     }

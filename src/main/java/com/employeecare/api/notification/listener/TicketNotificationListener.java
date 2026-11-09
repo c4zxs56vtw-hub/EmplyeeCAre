@@ -4,6 +4,7 @@ import com.employeecare.api.notification.email.TicketNotificationEmailService;
 import com.employeecare.api.notification.event.TicketEmailNotificationEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -23,6 +24,7 @@ public class TicketNotificationListener {
         this.emailService = emailService;
     }
 
+    @Async("notificationExecutor")
     @TransactionalEventListener(
             phase = TransactionPhase.AFTER_COMMIT
     )
@@ -63,11 +65,11 @@ public class TicketNotificationListener {
                     "Notification EmployeeCare envoyée : {}",
                     event.type()
             );
-        } catch (RuntimeException exception) {
+        } catch (Exception exception) {
             log.error(
-                    "Échec d'envoi de la notification : {}",
+                    "Échec d'une notification Brevo : type={}, typeErreur={}",
                     event.type(),
-                    exception
+                    exception.getClass().getSimpleName()
             );
         }
     }

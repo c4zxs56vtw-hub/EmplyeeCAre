@@ -1,5 +1,6 @@
 package com.employeecare.api.notification.email;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -12,19 +13,18 @@ import java.util.Map;
 public class TicketNotificationEmailService {
 
     private final RestClient restClient;
+    private final String apiKey;
     private final String senderEmail;
     private final String senderName;
 
     public TicketNotificationEmailService(
-            RestClient.Builder builder,
+            @Qualifier("brevoRestClient") RestClient restClient,
             @Value("${brevo.api.key}") String apiKey,
             @Value("${brevo.sender.email}") String senderEmail,
             @Value("${brevo.sender.name:EmployeeCare}") String senderName
     ) {
-        this.restClient = builder
-                .baseUrl("https://api.brevo.com/v3")
-                .defaultHeader("api-key", apiKey)
-                .build();
+        this.restClient = restClient;
+        this.apiKey = apiKey;
         this.senderEmail = senderEmail;
         this.senderName = senderName;
     }
@@ -66,6 +66,8 @@ public class TicketNotificationEmailService {
         restClient.post()
 
                 .uri("/smtp/email")
+
+                .header("api-key", apiKey)
 
                 .contentType(MediaType.APPLICATION_JSON)
 
