@@ -15,6 +15,8 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 
 import org.springframework.security.config.http.SessionCreationPolicy;
 
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+
 import org.springframework.security.web.SecurityFilterChain;
 
 import org.springframework.web.cors.CorsConfiguration;
@@ -30,7 +32,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            DatabaseJwtAuthenticationConverter jwtConverter
+            DatabaseJwtAuthenticationConverter jwtConverter,
+            PublicEndpointRateLimitFilter publicEndpointRateLimitFilter
     ) throws Exception {
 
         http
@@ -52,6 +55,12 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
 
                 .httpBasic(AbstractHttpConfigurer::disable)
+
+                // Limitation du débit sur les routes publiques
+                .addFilterBefore(
+                        publicEndpointRateLimitFilter,
+                        BearerTokenAuthenticationFilter.class
+                )
 
                 // Configurer les autorisations
                 .authorizeHttpRequests(auth -> auth

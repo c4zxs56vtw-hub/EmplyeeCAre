@@ -1097,6 +1097,69 @@ paths:
         '403':
           description: Accès réservé aux administrateurs
 
+  /admin/dashboard/analytics:
+    get:
+      tags:
+        - Analytics
+      summary: Obtenir les statistiques avancées administratives
+      operationId: getAdminDashboardAnalytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: months
+          in: query
+          required: false
+          description: Nombre de mois à analyser
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            default: 6
+      responses:
+        '200':
+          description: Analyses administratives
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardAnalytics'
+        '400':
+          description: Période invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Accès interdit
+
+  /responsable/dashboard/analytics:
+    get:
+      tags:
+        - Analytics
+      summary: Obtenir les statistiques avancées du responsable
+      operationId: getResponsableDashboardAnalytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            default: 6
+      responses:
+        '200':
+          description: Analyses du responsable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardAnalytics'
+        '400':
+          description: Période invalide
+        '401':
+          description: Authentification requise
+        '403':
+          description: Accès interdit
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1766,6 +1829,72 @@ components:
           description: |
             Délai moyen entre la création
             et la clôture, en heures.
+        generatedAt:
+          type: string
+          format: date-time
+
+    MonthlyTicketMetric:
+      type: object
+      required:
+        - month
+        - suppressed
+      properties:
+        month:
+          type: string
+          example: "2026-11"
+        count:
+          type: integer
+          format: int64
+          nullable: true
+        suppressed:
+          type: boolean
+          description: |
+            Indique si la valeur est masquée
+            pour limiter les risques de divulgation.
+
+    DepartmentTicketMetric:
+      type: object
+      required:
+        - departmentId
+        - count
+      properties:
+        departmentId:
+          type: string
+          format: uuid
+        count:
+          type: integer
+          format: int64
+
+    DashboardAnalytics:
+      type: object
+      required:
+        - scope
+        - months
+        - monthlyCreated
+        - byDepartment
+        - generatedAt
+      properties:
+        scope:
+          type: string
+          example: ADMINISTRATEUR
+        months:
+          type: integer
+        monthlyCreated:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonthlyTicketMetric'
+        resolutionRatePct:
+          type: number
+          format: double
+          nullable: true
+        reopeningRatePct:
+          type: number
+          format: double
+          nullable: true
+        byDepartment:
+          type: array
+          items:
+            $ref: '#/components/schemas/DepartmentTicketMetric'
         generatedAt:
           type: string
           format: date-time

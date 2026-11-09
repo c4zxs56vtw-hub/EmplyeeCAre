@@ -3,6 +3,8 @@ package com.employeecare.api.auth.controller;
 import com.employeecare.api.generated.models.AuthErrorCode;
 import com.employeecare.api.generated.models.AuthErrorResponse;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -12,6 +14,7 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(
         assignableTypes = AuthenticationController.class
 )
