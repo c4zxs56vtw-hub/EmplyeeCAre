@@ -28,9 +28,17 @@ public class TicketEvent {
     private Ticket ticket;
 
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "actor_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_id")
     private AppUser actor;
+
+
+    @Column(
+            name = "actor_kind",
+            nullable = false,
+            length = 20
+    )
+    private String actorKind = "USER";
 
 
     @Column(

@@ -910,6 +910,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmployeeAccount'
 
+  /public/tickets/anonymous:
+    post:
+      tags:
+        - Public
+      summary: Créer un signalement anonyme
+      operationId: createAnonymousTicket
+      description: |
+        Crée un signalement sans associer de compte utilisateur.
+        Un code secret de suivi est généré et retourné une seule fois au déclarant.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnonymousTicketRequest'
+      responses:
+        '201':
+          description: Signalement anonyme créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnonymousTicketCreatedResponse'
+        '400':
+          description: Données invalides
+        '429':
+          description: Trop de demandes
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1249,6 +1277,9 @@ components:
         isConfidential:
           type: boolean
           example: false
+        isAnonymous:
+          type: boolean
+          default: false
         createdAt:
           type: string
           example: "24/10/2026"
@@ -1372,3 +1403,44 @@ components:
         uploadedAt:
           type: string
           format: date-time
+
+    CreateAnonymousTicketRequest:
+      type: object
+      required:
+        - title
+        - description
+        - categoryCode
+        - departmentId
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 200
+        description:
+          type: string
+          minLength: 10
+          maxLength: 5000
+        categoryCode:
+          type: string
+        departmentId:
+          type: string
+          format: uuid
+          description: Département destinataire du signalement
+
+    AnonymousTicketCreatedResponse:
+      type: object
+      required:
+        - ticketId
+        - reference
+        - accessCode
+      properties:
+        ticketId:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        accessCode:
+          type: string
+          description: |
+            Code secret de suivi.
+            Communiqué une seule fois.

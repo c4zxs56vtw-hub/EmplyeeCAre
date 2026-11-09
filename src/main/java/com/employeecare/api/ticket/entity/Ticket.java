@@ -62,12 +62,15 @@ public class Ticket {
     // EMPLOYE CREATEUR
     // =====================================
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(
-            name = "employee_id",
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_id")
+    private AppUser employee;
+
+    @Column(
+            name = "is_anonymous",
             nullable = false
     )
-    private AppUser employee;
+    private boolean anonymous = false;
 
 
     // =====================================

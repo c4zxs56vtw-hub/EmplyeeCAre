@@ -70,6 +70,12 @@ public class SecurityConfig {
                                 "/auth/forgot-password"
                         ).permitAll()
 
+                        // Signalement anonyme public
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/public/tickets/anonymous"
+                        ).permitAll()
+
                         // Administration
                         .requestMatchers("/admin/**")
                         .hasRole("ADMINISTRATEUR")

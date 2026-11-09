@@ -528,12 +528,14 @@ public class TicketService {
 
         // Publier une notification après la prise en charge.
 
-        eventPublisher.publishEvent(
-                new TicketEmailNotificationEvent(
-                        ticket.getEmployee().getEmail(),
-                        TicketEmailNotificationEvent.Type.PRISE_EN_CHARGE
-                )
-        );
+        if (!ticket.isAnonymous() && ticket.getEmployee() != null) {
+            eventPublisher.publishEvent(
+                    new TicketEmailNotificationEvent(
+                            ticket.getEmployee().getEmail(),
+                            TicketEmailNotificationEvent.Type.PRISE_EN_CHARGE
+                    )
+            );
+        }
 
 
         // =====================================
@@ -739,12 +741,14 @@ public class TicketService {
 
         // Notifier l'employé qu'une solution attend sa validation.
 
-        eventPublisher.publishEvent(
-                new TicketEmailNotificationEvent(
-                        ticket.getEmployee().getEmail(),
-                        TicketEmailNotificationEvent.Type.SOLUTION_PROPOSEE
-                )
-        );
+        if (!ticket.isAnonymous() && ticket.getEmployee() != null) {
+            eventPublisher.publishEvent(
+                    new TicketEmailNotificationEvent(
+                            ticket.getEmployee().getEmail(),
+                            TicketEmailNotificationEvent.Type.SOLUTION_PROPOSEE
+                    )
+            );
+        }
 
 
         // ======================================
@@ -1477,6 +1481,8 @@ public class TicketService {
                  "SOLUTION_REFUSEE",
                  "CLOTURE_SIGNALEMENT" -> "Employé";
 
+            case "CREATION_SIGNALEMENT_ANONYME" -> "Signalant anonyme";
+
             default -> "Intervenant";
         };
     }
@@ -1515,6 +1521,10 @@ public class TicketService {
 
         response.setIsConfidential(
                 ticket.isConfidential()
+        );
+
+        response.setIsAnonymous(
+                ticket.isAnonymous()
         );
 
         DateTimeFormatter formatter = DateTimeFormatter
