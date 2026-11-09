@@ -1044,6 +1044,59 @@ paths:
         '429':
           description: Trop de tentatives
 
+  /responsable/dashboard/stats:
+    get:
+      tags:
+        - Statistics
+      summary: Statistiques du responsable
+      operationId: getResponsableDashboardStats
+      description: |
+        Retourne les statistiques des signalements
+        relevant du département et des catégories
+        attribuées au responsable connecté.
+
+        Cette première version exclut les signalements
+        anonymes et confidentiels.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statistiques du responsable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+        '401':
+          description: Authentification requise
+        '403':
+          description: Accès non autorisé
+
+  /admin/dashboard/stats:
+    get:
+      tags:
+        - Statistics
+      summary: Statistiques administratives
+      operationId: getAdminDashboardStats
+      description: |
+        Retourne les statistiques globales
+        des signalements nominatifs non confidentiels.
+
+        Les signalements anonymes et confidentiels
+        ne sont pas inclus dans cette première version.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statistiques administratives
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+        '401':
+          description: Authentification requise
+        '403':
+          description: Accès réservé aux administrateurs
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1653,3 +1706,66 @@ components:
         status:
           type: string
           description: Nouveau statut du signalement
+
+    DashboardCount:
+      type: object
+      required:
+        - label
+        - count
+      properties:
+        label:
+          type: string
+          example: EN_ATTENTE
+        count:
+          type: integer
+          format: int64
+          example: 12
+
+    DashboardSummary:
+      type: object
+      required:
+        - scope
+        - totalTickets
+        - byStatus
+        - byCategory
+        - generatedAt
+      properties:
+        scope:
+          type: string
+          description: Périmètre des statistiques
+          example: RESPONSABLE
+        totalTickets:
+          type: integer
+          format: int64
+        assignedToMe:
+          type: integer
+          format: int64
+          description: |
+            Nombre de signalements attribués
+            au responsable connecté.
+            Absent pour l'administrateur.
+        byStatus:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardCount'
+        byCategory:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardCount'
+        averageTakeChargeHours:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            Délai moyen entre la création
+            et la première prise en charge, en heures.
+        averageClosureHours:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            Délai moyen entre la création
+            et la clôture, en heures.
+        generatedAt:
+          type: string
+          format: date-time

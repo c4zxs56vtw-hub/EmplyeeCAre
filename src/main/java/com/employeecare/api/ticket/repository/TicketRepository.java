@@ -89,4 +89,84 @@ public interface TicketRepository
             String reference
     );
 
+    @Query("""
+        SELECT t.status, COUNT(t)
+        FROM Ticket t
+        WHERE t.anonymous = false
+          AND t.confidential = false
+        GROUP BY t.status
+        """)
+    List<Object[]> countDashboardByStatusAdmin();
+
+    @Query("""
+        SELECT t.category.code, COUNT(t)
+        FROM Ticket t
+        WHERE t.anonymous = false
+          AND t.confidential = false
+        GROUP BY t.category.code
+        ORDER BY t.category.code
+        """)
+    List<Object[]> countDashboardByCategoryAdmin();
+
+    @Query("""
+        SELECT t.status, COUNT(t)
+        FROM Ticket t
+        WHERE t.department.id = :departmentId
+          AND t.category.code IN :categoryCodes
+          AND t.anonymous = false
+          AND t.confidential = false
+        GROUP BY t.status
+        """)
+    List<Object[]> countDashboardByStatusResponsable(
+
+            @Param("departmentId")
+            UUID departmentId,
+
+            @Param("categoryCodes")
+            Set<String> categoryCodes
+
+    );
+
+    @Query("""
+        SELECT t.category.code, COUNT(t)
+        FROM Ticket t
+        WHERE t.department.id = :departmentId
+          AND t.category.code IN :categoryCodes
+          AND t.anonymous = false
+          AND t.confidential = false
+        GROUP BY t.category.code
+        ORDER BY t.category.code
+        """)
+    List<Object[]> countDashboardByCategoryResponsable(
+
+            @Param("departmentId")
+            UUID departmentId,
+
+            @Param("categoryCodes")
+            Set<String> categoryCodes
+
+    );
+
+    @Query("""
+        SELECT COUNT(t)
+        FROM Ticket t
+        WHERE t.assignedResponsable.id = :responsableId
+          AND t.department.id = :departmentId
+          AND t.category.code IN :categoryCodes
+          AND t.anonymous = false
+          AND t.confidential = false
+        """)
+    long countDashboardAssignedToResponsable(
+
+            @Param("responsableId")
+            UUID responsableId,
+
+            @Param("departmentId")
+            UUID departmentId,
+
+            @Param("categoryCodes")
+            Set<String> categoryCodes
+
+    );
+
 }

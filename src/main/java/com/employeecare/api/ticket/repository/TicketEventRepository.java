@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface TicketEventRepository
@@ -26,5 +27,43 @@ public interface TicketEventRepository
     Optional<TicketEvent> findFirstByTicket_IdAndEventTypeOrderByCreatedAtDescIdDesc(
             UUID ticketId,
             String eventType
+    );
+
+    @Query("""
+        SELECT t.createdAt, e.createdAt
+        FROM TicketEvent e
+        JOIN e.ticket t
+        WHERE e.eventType = :eventType
+          AND t.anonymous = false
+          AND t.confidential = false
+        """)
+    List<Object[]> findDashboardDurationsAdmin(
+
+            @Param("eventType")
+            String eventType
+
+    );
+
+    @Query("""
+        SELECT t.createdAt, e.createdAt
+        FROM TicketEvent e
+        JOIN e.ticket t
+        WHERE e.eventType = :eventType
+          AND t.department.id = :departmentId
+          AND t.category.code IN :categoryCodes
+          AND t.anonymous = false
+          AND t.confidential = false
+        """)
+    List<Object[]> findDashboardDurationsResponsable(
+
+            @Param("eventType")
+            String eventType,
+
+            @Param("departmentId")
+            UUID departmentId,
+
+            @Param("categoryCodes")
+            Set<String> categoryCodes
+
     );
 }
