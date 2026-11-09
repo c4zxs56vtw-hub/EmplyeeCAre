@@ -2,14 +2,19 @@ package com.employeecare.api.responsable.controller;
 
 import com.employeecare.api.generated.apis.EspaceResponsableApi;
 
+import com.employeecare.api.generated.models.TicketAttachmentResponse;
 import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
+import com.employeecare.api.ticket.http.AttachmentHttpResponse;
+import com.employeecare.api.ticket.service.TicketAttachmentService;
+import com.employeecare.api.ticket.service.TicketAttachmentService.DownloadData;
 import com.employeecare.api.ticket.service.TicketService;
 
 import jakarta.validation.Valid;
 
+import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
 
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,12 +39,14 @@ public class ResponsableTicketController
         implements EspaceResponsableApi {
 
     private final TicketService ticketService;
+    private final TicketAttachmentService attachmentService;
 
     public ResponsableTicketController(
-            TicketService ticketService
+            TicketService ticketService,
+            TicketAttachmentService attachmentService
     ) {
-
         this.ticketService = ticketService;
+        this.attachmentService = attachmentService;
     }
 
     @Override
@@ -241,5 +248,59 @@ public class ResponsableTicketController
                 );
 
         return ResponseEntity.ok(history);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('RESPONSABLE')")
+    public ResponseEntity<List<TicketAttachmentResponse>> listResponsableTicketAttachments(
+            @PathVariable("ticketId") UUID ticketId
+    ) {
+
+        UUID responsableId = currentResponsableId();
+
+        List<TicketAttachmentResponse> attachments =
+                attachmentService.listForResponsable(
+                        responsableId,
+                        ticketId
+                );
+
+        return ResponseEntity.ok(attachments);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('RESPONSABLE')")
+    public ResponseEntity<Resource> downloadResponsableTicketAttachment(
+            @PathVariable("ticketId") UUID ticketId,
+            @PathVariable("attachmentId") UUID attachmentId
+    ) {
+
+        UUID responsableId = currentResponsableId();
+
+        DownloadData data =
+                attachmentService.downloadForResponsable(
+                        responsableId,
+                        ticketId,
+                        attachmentId
+                );
+
+        return AttachmentHttpResponse.download(data);
+    }
+
+    private UUID currentResponsableId() {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        return UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
     }
 }

@@ -8,11 +8,14 @@ import com.employeecare.api.generated.models.TicketAttachmentResponse;
 import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 
+import com.employeecare.api.ticket.http.AttachmentHttpResponse;
 import com.employeecare.api.ticket.service.TicketAttachmentService;
+import com.employeecare.api.ticket.service.TicketAttachmentService.DownloadData;
 import com.employeecare.api.ticket.service.TicketService;
 
 import jakarta.validation.Valid;
 
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -302,5 +305,59 @@ public class EmployeeTicketController implements EspaceEmployApi {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<List<TicketAttachmentResponse>> listMyTicketAttachments(
+            @PathVariable("ticketId") UUID ticketId
+    ) {
+
+        UUID employeeId = currentEmployeeId();
+
+        List<TicketAttachmentResponse> attachments =
+                attachmentService.listForEmployee(
+                        employeeId,
+                        ticketId
+                );
+
+        return ResponseEntity.ok(attachments);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EMPLOYE')")
+    public ResponseEntity<Resource> downloadMyTicketAttachment(
+            @PathVariable("ticketId") UUID ticketId,
+            @PathVariable("attachmentId") UUID attachmentId
+    ) {
+
+        UUID employeeId = currentEmployeeId();
+
+        DownloadData data =
+                attachmentService.downloadForEmployee(
+                        employeeId,
+                        ticketId,
+                        attachmentId
+                );
+
+        return AttachmentHttpResponse.download(data);
+    }
+
+    private UUID currentEmployeeId() {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuth)) {
+            throw new AuthenticationCredentialsNotFoundException(
+                    "Authentification JWT obligatoire."
+            );
+        }
+
+        return UUID.fromString(
+                jwtAuth.getToken().getSubject()
+        );
     }
 }

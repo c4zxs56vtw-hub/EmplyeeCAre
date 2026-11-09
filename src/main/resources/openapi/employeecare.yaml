@@ -465,6 +465,71 @@ paths:
           description: Ajout impossible
         '413':
           description: Fichier trop volumineux
+    get:
+      tags:
+        - Espace Employé
+      summary: Lister les pièces jointes de mon signalement
+      operationId: listMyTicketAttachments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Liste des pièces jointes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketAttachmentResponse'
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+
+  /employe/tickets/{ticketId}/attachments/{attachmentId}/download:
+    get:
+      tags:
+        - Espace Employé
+      summary: Télécharger une pièce jointe personnelle
+      operationId: downloadMyTicketAttachment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contenu du fichier
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle EMPLOYE requis
+        '404':
+          description: Fichier inexistant ou non autorisé
 
   /responsable/tickets:
     get:
@@ -662,6 +727,73 @@ paths:
           description: Rôle RESPONSABLE requis
         '404':
           description: Signalement inexistant ou non autorisé
+
+  /responsable/tickets/{ticketId}/attachments:
+    get:
+      tags:
+        - Espace Responsable
+      summary: Lister les pièces jointes d'un signalement attribué
+      operationId: listResponsableTicketAttachments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Liste des pièces jointes autorisées
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketAttachmentResponse'
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Signalement inexistant ou non autorisé
+
+  /responsable/tickets/{ticketId}/attachments/{attachmentId}/download:
+    get:
+      tags:
+        - Espace Responsable
+      summary: Télécharger une pièce jointe autorisée
+      operationId: downloadResponsableTicketAttachment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contenu du fichier
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Authentification requise
+        '403':
+          description: Rôle RESPONSABLE requis
+        '404':
+          description: Fichier inexistant ou non autorisé
 
   /admin/employees:
     get:
