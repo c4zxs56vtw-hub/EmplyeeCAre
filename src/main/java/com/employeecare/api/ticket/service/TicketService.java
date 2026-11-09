@@ -6,6 +6,8 @@ import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
 
+import com.employeecare.api.notification.event.TicketEmailNotificationEvent;
+
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 
@@ -23,6 +25,7 @@ import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
 import com.employeecare.api.user.repository.AppUserRepository;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -47,6 +50,7 @@ public class TicketService {
     private final JdbcTemplate jdbcTemplate;
     private final ResponsableAccountRepository responsableAccountRepository;
     private final TicketEventRepository ticketEventRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TicketService(
 
@@ -60,7 +64,9 @@ public class TicketService {
 
             ResponsableAccountRepository responsableAccountRepository,
 
-            TicketEventRepository ticketEventRepository
+            TicketEventRepository ticketEventRepository,
+
+            ApplicationEventPublisher eventPublisher
 
     ) {
 
@@ -75,6 +81,8 @@ public class TicketService {
         this.responsableAccountRepository = responsableAccountRepository;
 
         this.ticketEventRepository = ticketEventRepository;
+
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -504,6 +512,15 @@ public class TicketService {
 
         ticketEventRepository.save(event);
 
+        // Publier une notification après la prise en charge.
+
+        eventPublisher.publishEvent(
+                new TicketEmailNotificationEvent(
+                        ticket.getEmployee().getEmail(),
+                        TicketEmailNotificationEvent.Type.PRISE_EN_CHARGE
+                )
+        );
+
 
         // =====================================
         // 8. RETOURNER LA REPONSE
@@ -705,6 +722,15 @@ public class TicketService {
         ticketRepository.saveAndFlush(ticket);
 
         ticketEventRepository.save(event);
+
+        // Notifier l'employé qu'une solution attend sa validation.
+
+        eventPublisher.publishEvent(
+                new TicketEmailNotificationEvent(
+                        ticket.getEmployee().getEmail(),
+                        TicketEmailNotificationEvent.Type.SOLUTION_PROPOSEE
+                )
+        );
 
 
         // ======================================

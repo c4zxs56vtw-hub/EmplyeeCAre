@@ -6,6 +6,7 @@ import com.employeecare.api.generated.models.ReviewTicketRequest;
 import com.employeecare.api.generated.models.TicketHistoryEvent;
 import com.employeecare.api.generated.models.TicketSummary;
 import com.employeecare.api.generated.models.UpdateTicketStatusRequest;
+import com.employeecare.api.notification.event.TicketEmailNotificationEvent;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 import com.employeecare.api.ticket.entity.Ticket;
@@ -28,6 +29,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -68,6 +70,9 @@ class TicketServiceTest {
     @Mock
     private TicketEventRepository ticketEventRepository;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private TicketService ticketService;
 
@@ -90,6 +95,7 @@ class TicketServiceTest {
 
         employee = new AppUser();
         employee.setId(employeeId);
+        employee.setEmail("claire.moreau@entreprise.com");
         employee.setStatus(AccountStatus.ACTIF);
         employee.setDepartment(department);
         employee.setRoles(new HashSet<>(Set.of(employeRole)));
@@ -298,6 +304,7 @@ class TicketServiceTest {
         ticket.setId(ticketId);
         ticket.setReference("SIG-2026-000001");
         ticket.setTitle("Problème réseau");
+        ticket.setEmployee(employee);
         ticket.setDepartment(department);
         ticket.setCategory(category);
         ticket.setPriority(TicketPriority.MOYENNE);
@@ -323,6 +330,11 @@ class TicketServiceTest {
         assertThat(savedEvent.getEventType()).isEqualTo("PRISE_EN_CHARGE");
         assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.EN_ATTENTE);
         assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
+
+        verify(eventPublisher).publishEvent(new TicketEmailNotificationEvent(
+                "claire.moreau@entreprise.com",
+                TicketEmailNotificationEvent.Type.PRISE_EN_CHARGE
+        ));
     }
 
     @Test
@@ -424,6 +436,7 @@ class TicketServiceTest {
         ticket.setId(ticketId);
         ticket.setReference("SIG-2026-000001");
         ticket.setTitle("Problème réseau");
+        ticket.setEmployee(employee);
         ticket.setDepartment(department);
         ticket.setCategory(category);
         ticket.setPriority(TicketPriority.MOYENNE);
@@ -454,6 +467,11 @@ class TicketServiceTest {
         assertThat(savedEvent.getOldStatus()).isEqualTo(TicketStatus.DIAGNOSTIC_EN_COURS);
         assertThat(savedEvent.getNewStatus()).isEqualTo(TicketStatus.ATTENTE_VALIDATION);
         assertThat(savedEvent.getNote()).isEqualTo("Le problème de connexion a été corrigé et validé.");
+
+        verify(eventPublisher).publishEvent(new TicketEmailNotificationEvent(
+                "claire.moreau@entreprise.com",
+                TicketEmailNotificationEvent.Type.SOLUTION_PROPOSEE
+        ));
     }
 
     @Test
