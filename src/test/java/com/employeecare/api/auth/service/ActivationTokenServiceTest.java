@@ -4,12 +4,14 @@ import com.employeecare.api.auth.entity.AccountActivationToken;
 import com.employeecare.api.auth.repository.AccountActivationTokenRepository;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
+import com.employeecare.api.user.repository.AppUserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,23 +35,32 @@ class ActivationTokenServiceTest {
     @Mock
     private AccountActivationTokenRepository tokenRepository;
 
+    @Mock
+    private AppUserRepository appUserRepository;
+
     private ActivationTokenService service;
 
     @BeforeEach
     void setUp() {
-        service = new ActivationTokenService(tokenRepository);
+        service = new ActivationTokenService(tokenRepository, appUserRepository);
     }
 
     @Test
-    void generateToken_enregistreUniquementLeHashEtRetourneLeJetonBrut() {
+    void generateToken_verrouilleUtilisateurRevoqueAnciensJetonsEtEnregistreNouveauHash() {
 
         AppUser user = pendingUser();
+        when(appUserRepository.findByIdForUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
 
         String rawToken = service.generateToken(user);
 
+        InOrder inOrder = inOrder(appUserRepository, tokenRepository);
+        inOrder.verify(appUserRepository).findByIdForUpdate(user.getId());
+        inOrder.verify(tokenRepository).revokePreviousUnusedTokens(user.getId());
+
         ArgumentCaptor<AccountActivationToken> captor =
                 ArgumentCaptor.forClass(AccountActivationToken.class);
-        verify(tokenRepository).save(captor.capture());
+        inOrder.verify(tokenRepository).save(captor.capture());
 
         AccountActivationToken saved = captor.getValue();
 
@@ -67,6 +79,8 @@ class ActivationTokenServiceTest {
     void generateToken_produitDesJetonsDifferents() {
 
         AppUser user = pendingUser();
+        when(appUserRepository.findByIdForUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
 
         String first = service.generateToken(user);
         String second = service.generateToken(user);
@@ -98,10 +112,13 @@ class ActivationTokenServiceTest {
 
         AppUser user = pendingUser();
         user.setStatus(AccountStatus.ACTIF);
+        when(appUserRepository.findByIdForUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> service.generateToken(user))
                 .isInstanceOf(IllegalArgumentException.class);
 
+        verify(tokenRepository, never()).revokePreviousUnusedTokens(any());
         verify(tokenRepository, never()).save(any());
     }
 
@@ -109,6 +126,9 @@ class ActivationTokenServiceTest {
     void findValidToken_jetonValide_retourneLeJeton() {
 
         AppUser user = pendingUser();
+        when(appUserRepository.findByIdForUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
+
         String rawToken = service.generateToken(user);
 
         ArgumentCaptor<AccountActivationToken> captor =
@@ -160,6 +180,24 @@ class ActivationTokenServiceTest {
 
         assertThatThrownBy(() -> service.findValidToken("raw"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void findValidToken_jetonRevoque_leveException() {
+
+        AccountActivationToken revoked = new AccountActivationToken(
+                pendingUser(),
+                "hash",
+                Instant.now().plus(Duration.ofHours(2))
+        );
+        revoked.revoke(Instant.now());
+
+        when(tokenRepository.findByTokenHashAndUsedAtIsNullAndRevokedAtIsNull(anyString()))
+                .thenReturn(Optional.of(revoked));
+
+        assertThatThrownBy(() -> service.findValidToken("raw"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("invalide ou expiré");
     }
 
     @Test

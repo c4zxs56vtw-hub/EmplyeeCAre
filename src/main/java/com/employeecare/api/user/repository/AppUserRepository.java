@@ -1,8 +1,10 @@
 package com.employeecare.api.user.repository;
 
 import com.employeecare.api.user.entity.AppUser;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -30,4 +32,14 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     @EntityGraph(attributePaths = {"roles","department"})
     List<AppUser> findAllByOrderByRolesDesc();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT u
+        FROM AppUser u
+        WHERE u.id = :userId
+        """)
+    Optional<AppUser> findByIdForUpdate(
+            @Param("userId") UUID userId
+    );
 }

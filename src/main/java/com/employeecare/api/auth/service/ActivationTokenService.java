@@ -4,6 +4,7 @@ import com.employeecare.api.auth.entity.AccountActivationToken;
 import com.employeecare.api.auth.repository.AccountActivationTokenRepository;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
+import com.employeecare.api.user.repository.AppUserRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.UUID;
 
 @Service
 public class ActivationTokenService {
@@ -27,27 +29,58 @@ public class ActivationTokenService {
             new SecureRandom();
 
     private final AccountActivationTokenRepository tokenRepository;
+    private final AppUserRepository appUserRepository;
 
     public ActivationTokenService(
-            AccountActivationTokenRepository tokenRepository
+            AccountActivationTokenRepository tokenRepository,
+            AppUserRepository appUserRepository
     ) {
         this.tokenRepository = tokenRepository;
+        this.appUserRepository = appUserRepository;
     }
 
     /**
-     * Génère et enregistre un jeton d'activation.
+     * Génère et enregistre un jeton d'activation après avoir
+     * verrouillé l'utilisateur et révoqué ses anciens jetons.
      */
     @Transactional
     public String generateToken(AppUser user) {
 
-        if (user == null
-                || user.getId() == null
-                || user.getStatus() != AccountStatus.EN_ATTENTE_ACTIVATION) {
-
+        if (user == null || user.getId() == null) {
             throw new IllegalArgumentException(
                     "Le compte ne peut pas recevoir de jeton d'activation."
             );
         }
+
+        UUID userId = user.getId();
+
+        // ==========================================
+        // 1. VERROUILLER L'UTILISATEUR
+        // ==========================================
+
+        AppUser lockedUser = appUserRepository
+                .findByIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Utilisateur introuvable."
+                ));
+
+        if (lockedUser.getStatus() != AccountStatus.EN_ATTENTE_ACTIVATION) {
+            throw new IllegalArgumentException(
+                    "Le compte ne peut pas recevoir de jeton d'activation."
+            );
+        }
+
+        // ==========================================
+        // 2. REVOQUER LES ANCIENS JETONS
+        // ==========================================
+
+        tokenRepository.revokePreviousUnusedTokens(
+                lockedUser.getId()
+        );
+
+        // ==========================================
+        // 3. GENERER UN NOUVEAU JETON
+        // ==========================================
 
         byte[] randomBytes = new byte[32];
 
@@ -62,14 +95,22 @@ public class ActivationTokenService {
         Instant expirationDate =
                 Instant.now().plus(TOKEN_VALIDITY);
 
+        // ==========================================
+        // 4. ENREGISTRER LE NOUVEAU JETON
+        // ==========================================
+
         AccountActivationToken activationToken =
                 new AccountActivationToken(
-                        user,
+                        lockedUser,
                         tokenHash,
                         expirationDate
                 );
 
         tokenRepository.save(activationToken);
+
+        // ==========================================
+        // 5. RETOURNER LE RESULTAT
+        // ==========================================
 
         return rawToken;
     }
@@ -95,7 +136,14 @@ public class ActivationTokenService {
                         "Jeton d'activation invalide ou expiré."
                 ));
 
-        if (!token.isValid(Instant.now())
+        Instant now = Instant.now();
+
+        if (token.getRevokedAt() != null
+                || token.getUsedAt() != null
+                || token.getExpiresAt() == null
+                || !token.getExpiresAt().isAfter(now)
+                || !token.isValid(now)
+                || token.getUser() == null
                 || token.getUser().getStatus()
                 != AccountStatus.EN_ATTENTE_ACTIVATION) {
 
