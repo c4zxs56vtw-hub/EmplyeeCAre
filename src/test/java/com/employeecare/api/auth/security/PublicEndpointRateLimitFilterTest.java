@@ -110,4 +110,33 @@ class PublicEndpointRateLimitFilterTest {
 
         assertThat(otherIpResponse.getStatus()).isEqualTo(HttpStatus.OK.value());
     }
+    @Test
+    @DisplayName("En-tête X-Forwarded-For non fiable ne permet pas de contourner la limitation")
+    void spoofedXForwardedForHeader_shouldNotBypassRateLimit() throws Exception {
+        String clientIp = "192.168.1.77";
+
+        for (int i = 1; i <= PublicEndpointRateLimitFilter.MAX_ANONYMOUS_CREATE_PER_WINDOW; i++) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/public/tickets/anonymous");
+            request.setContextPath("/api");
+            request.setServletPath("/public/tickets/anonymous");
+            request.setRemoteAddr(clientIp);
+            request.addHeader("X-Forwarded-For", "203.0.113." + i);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            filter.doFilter(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
+        }
+
+        MockHttpServletRequest blockedRequest = new MockHttpServletRequest("POST", "/api/public/tickets/anonymous");
+        blockedRequest.setContextPath("/api");
+        blockedRequest.setServletPath("/public/tickets/anonymous");
+        blockedRequest.setRemoteAddr(clientIp);
+        blockedRequest.addHeader("X-Forwarded-For", "203.0.113.99");
+        MockHttpServletResponse blockedResponse = new MockHttpServletResponse();
+
+        filter.doFilter(blockedRequest, blockedResponse, filterChain);
+
+        assertThat(blockedResponse.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
 }

@@ -2,6 +2,7 @@ package com.employeecare.api.statistics.repository;
 
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
@@ -20,6 +21,7 @@ public class DashboardAggregationRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    @Autowired
     public DashboardAggregationRepository(
             DataSource dataSource
     ) {
