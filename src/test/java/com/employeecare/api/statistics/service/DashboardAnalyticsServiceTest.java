@@ -4,6 +4,7 @@ import com.employeecare.api.department.entity.Department;
 import com.employeecare.api.generated.models.DashboardAnalytics;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
+import com.employeecare.api.statistics.repository.DashboardAggregationRepository;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
 import com.employeecare.api.user.entity.Role;
@@ -19,7 +20,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -29,7 +33,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +43,9 @@ class DashboardAnalyticsServiceTest {
 
     @Mock
     private EntityManager entityManager;
+
+    @Mock
+    private DashboardAggregationRepository aggregationRepository;
 
     @Mock
     private AppUserRepository userRepository;
@@ -48,7 +57,7 @@ class DashboardAnalyticsServiceTest {
     private DashboardAnalyticsService analyticsService;
 
     @Test
-    @DisplayName("getAdminAnalytics - Calcule les taux, la tendance mensuelle et la répartition par département")
+    @DisplayName("getAdminAnalytics - Calcule les taux, la tendance mensuelle en une seule requête et la répartition par département")
     @SuppressWarnings("unchecked")
     void getAdminAnalytics_whenValidAdmin_shouldReturnAnalytics() {
         UUID adminId = UUID.randomUUID();
@@ -63,9 +72,18 @@ class DashboardAnalyticsServiceTest {
 
         TypedQuery<Long> countQuery = mock(TypedQuery.class);
         when(countQuery.setParameter(anyString(), any())).thenReturn(countQuery);
-        // 1er appel: ALL (80), 2e: RESOLVED (60), 3e: PROPOSED (40), 4e: REOPENED (8), puis 2 mois (3 et 25)
-        when(countQuery.getSingleResult()).thenReturn(80L, 60L, 40L, 8L, 3L, 25L);
+        // 1er appel: ALL (80), 2e: RESOLVED (60), 3e: PROPOSED (40), 4e: REOPENED (8)
+        when(countQuery.getSingleResult()).thenReturn(80L, 60L, 40L, 8L);
         when(entityManager.createQuery(anyString(), eq(Long.class))).thenReturn(countQuery);
+
+        YearMonth currentMonth = YearMonth.now(ZoneId.of("Africa/Douala"));
+        YearMonth firstMonth = currentMonth.minusMonths(2);
+        // 3 mois demandés: mois 1 = 3 (<5 -> masqué), mois 2 = absent (0 -> non masqué), mois 3 = 25 (>=5)
+        when(aggregationRepository.createdByMonth(isNull(), eq(Set.of()), any(), any()))
+                .thenReturn(Map.of(
+                        firstMonth, 3L,
+                        currentMonth, 25L
+                ));
 
         TypedQuery<Object[]> deptQuery = mock(TypedQuery.class);
         when(deptQuery.setParameter(anyString(), any())).thenReturn(deptQuery);
@@ -74,22 +92,31 @@ class DashboardAnalyticsServiceTest {
 
         when(userRepository.findByIdWithRoles(adminId)).thenReturn(Optional.of(admin));
 
-        DashboardAnalytics result = analyticsService.getAdminAnalytics(adminId, 2);
+        DashboardAnalytics result = analyticsService.getAdminAnalytics(adminId, 3);
 
         assertThat(result.getScope()).isEqualTo("ADMINISTRATEUR");
-        assertThat(result.getMonths()).isEqualTo(2);
+        assertThat(result.getMonths()).isEqualTo(3);
         assertThat(result.getResolutionRatePct()).isEqualTo(75.0);
         assertThat(result.getReopeningRatePct()).isEqualTo(20.0);
-        assertThat(result.getMonthlyCreated()).hasSize(2);
+        assertThat(result.getMonthlyCreated()).hasSize(3);
+
         // 1er mois: count = 3 (< 5) -> suppressed = true, count = null
         assertThat(result.getMonthlyCreated().get(0).getSuppressed()).isTrue();
         assertThat(result.getMonthlyCreated().get(0).getCount()).isNull();
-        // 2e mois: count = 25 (>= 5) -> suppressed = false, count = 25
+
+        // 2e mois: absent de la réponse SQL -> count = 0, suppressed = false
         assertThat(result.getMonthlyCreated().get(1).getSuppressed()).isFalse();
-        assertThat(result.getMonthlyCreated().get(1).getCount()).isEqualTo(25L);
+        assertThat(result.getMonthlyCreated().get(1).getCount()).isEqualTo(0L);
+
+        // 3e mois: count = 25 (>= 5) -> suppressed = false, count = 25
+        assertThat(result.getMonthlyCreated().get(2).getSuppressed()).isFalse();
+        assertThat(result.getMonthlyCreated().get(2).getCount()).isEqualTo(25L);
+
         assertThat(result.getByDepartment()).hasSize(1);
         assertThat(result.getByDepartment().get(0).getDepartmentId()).isEqualTo(deptId);
         assertThat(result.getByDepartment().get(0).getCount()).isEqualTo(28L);
+
+        verify(aggregationRepository).createdByMonth(isNull(), eq(Set.of()), any(), any());
     }
 
     @Test
@@ -116,8 +143,9 @@ class DashboardAnalyticsServiceTest {
     @DisplayName("getResponsableAnalytics - Sans catégorie attribuée retourne des statistiques à zéro et byDepartment vide")
     void getResponsableAnalytics_withoutCategories_shouldReturnZeros() {
         UUID responsableId = UUID.randomUUID();
+        UUID deptId = UUID.randomUUID();
         Department department = new Department();
-        department.setId(UUID.randomUUID());
+        department.setId(deptId);
 
         Role respRole = new Role();
         respRole.setCode("RESPONSABLE");
@@ -135,6 +163,8 @@ class DashboardAnalyticsServiceTest {
         responsable.setAssignedCategories(Set.of());
 
         when(responsableRepository.findById(responsableId)).thenReturn(Optional.of(responsable));
+        when(aggregationRepository.createdByMonth(eq(deptId), eq(Set.of()), any(), any()))
+                .thenReturn(Map.of());
 
         DashboardAnalytics result = analyticsService.getResponsableAnalytics(responsableId, 3);
 

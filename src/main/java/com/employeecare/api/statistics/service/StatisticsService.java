@@ -6,8 +6,9 @@ import com.employeecare.api.generated.models.DashboardSummary;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 
+import com.employeecare.api.statistics.repository.DashboardAggregationRepository;
+
 import com.employeecare.api.ticket.entity.TicketStatus;
-import com.employeecare.api.ticket.repository.TicketEventRepository;
 import com.employeecare.api.ticket.repository.TicketRepository;
 
 import com.employeecare.api.user.entity.AccountStatus;
@@ -19,8 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -36,7 +35,7 @@ import java.util.UUID;
 public class StatisticsService {
 
     private final TicketRepository ticketRepository;
-    private final TicketEventRepository eventRepository;
+    private final DashboardAggregationRepository aggregationRepository;
     private final ResponsableAccountRepository responsableRepository;
     private final AppUserRepository userRepository;
 
@@ -44,7 +43,7 @@ public class StatisticsService {
 
             TicketRepository ticketRepository,
 
-            TicketEventRepository eventRepository,
+            DashboardAggregationRepository aggregationRepository,
 
             ResponsableAccountRepository responsableRepository,
 
@@ -54,7 +53,7 @@ public class StatisticsService {
 
         this.ticketRepository = ticketRepository;
 
-        this.eventRepository = eventRepository;
+        this.aggregationRepository = aggregationRepository;
 
         this.responsableRepository = responsableRepository;
 
@@ -112,17 +111,13 @@ public class StatisticsService {
 
 
         // ==========================================
-        // 3. RECUPERER LES DATES
+        // 3. CALCULER LES DELAIS DANS POSTGRESQL
         // ==========================================
 
-        List<Object[]> takeChargeRows =
-                eventRepository.findDashboardDurationsAdmin(
-                        "PRISE_EN_CHARGE"
-                );
-
-        List<Object[]> closureRows =
-                eventRepository.findDashboardDurationsAdmin(
-                        "CLOTURE_SIGNALEMENT"
+        DashboardAggregationRepository.Delays delays =
+                aggregationRepository.averageDurations(
+                        null,
+                        Set.of()
                 );
 
 
@@ -134,8 +129,7 @@ public class StatisticsService {
                 "ADMINISTRATEUR",
                 statusRows,
                 categoryRows,
-                takeChargeRows,
-                closureRows,
+                delays,
                 null
         );
     }
@@ -234,8 +228,10 @@ public class StatisticsService {
                     "RESPONSABLE",
                     List.of(),
                     List.of(),
-                    List.of(),
-                    List.of(),
+                    new DashboardAggregationRepository.Delays(
+                            null,
+                            null
+                    ),
                     0L
             );
         }
@@ -259,19 +255,11 @@ public class StatisticsService {
 
 
         // ==========================================
-        // 8. RECUPERER LES DELAIS
+        // 8. CALCULER LES DELAIS DANS POSTGRESQL
         // ==========================================
 
-        List<Object[]> takeChargeRows =
-                eventRepository.findDashboardDurationsResponsable(
-                        "PRISE_EN_CHARGE",
-                        departmentId,
-                        categoryCodes
-                );
-
-        List<Object[]> closureRows =
-                eventRepository.findDashboardDurationsResponsable(
-                        "CLOTURE_SIGNALEMENT",
+        DashboardAggregationRepository.Delays delays =
+                aggregationRepository.averageDurations(
                         departmentId,
                         categoryCodes
                 );
@@ -297,8 +285,7 @@ public class StatisticsService {
                 "RESPONSABLE",
                 statusRows,
                 categoryRows,
-                takeChargeRows,
-                closureRows,
+                delays,
                 assignedToMe
         );
     }
@@ -311,9 +298,7 @@ public class StatisticsService {
 
             List<Object[]> categoryRows,
 
-            List<Object[]> takeChargeRows,
-
-            List<Object[]> closureRows,
+            DashboardAggregationRepository.Delays delays,
 
             Long assignedToMe
 
@@ -420,11 +405,11 @@ public class StatisticsService {
         // ==========================================
 
         response.setAverageTakeChargeHours(
-                calculateAverageHours(takeChargeRows)
+                delays != null ? delays.takeChargeHours() : null
         );
 
         response.setAverageClosureHours(
-                calculateAverageHours(closureRows)
+                delays != null ? delays.closureHours() : null
         );
 
 
@@ -438,49 +423,5 @@ public class StatisticsService {
 
 
         return response;
-    }
-
-    private Double calculateAverageHours(
-            List<Object[]> rows
-    ) {
-
-        if (rows.isEmpty()) {
-            return null;
-        }
-
-        double totalHours = 0;
-
-        int validRecords = 0;
-
-        for (Object[] row : rows) {
-
-            Instant start = (Instant) row[0];
-
-            Instant end = (Instant) row[1];
-
-            if (start == null || end == null) {
-                continue;
-            }
-
-            if (end.isBefore(start)) {
-                continue;
-            }
-
-            double hours = Duration
-                    .between(start, end)
-                    .toMillis() / 3_600_000.0;
-
-            totalHours += hours;
-
-            validRecords++;
-        }
-
-        if (validRecords == 0) {
-            return null;
-        }
-
-        double average = totalHours / validRecords;
-
-        return Math.round(average * 100.0) / 100.0;
     }
 }

@@ -7,6 +7,8 @@ import com.employeecare.api.generated.models.MonthlyTicketMetric;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
 
+import com.employeecare.api.statistics.repository.DashboardAggregationRepository;
+
 import com.employeecare.api.ticket.entity.TicketStatus;
 
 import com.employeecare.api.user.entity.AccountStatus;
@@ -29,6 +31,7 @@ import java.time.ZoneOffset;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -41,12 +44,15 @@ public class DashboardAnalyticsService {
     private static final long MIN_GROUP_SIZE = 5;
 
     private final EntityManager entityManager;
+    private final DashboardAggregationRepository aggregationRepository;
     private final AppUserRepository userRepository;
     private final ResponsableAccountRepository responsableRepository;
 
     public DashboardAnalyticsService(
 
             EntityManager entityManager,
+
+            DashboardAggregationRepository aggregationRepository,
 
             AppUserRepository userRepository,
 
@@ -55,6 +61,8 @@ public class DashboardAnalyticsService {
     ) {
 
         this.entityManager = entityManager;
+
+        this.aggregationRepository = aggregationRepository;
 
         this.userRepository = userRepository;
 
@@ -306,24 +314,56 @@ public class DashboardAnalyticsService {
             int months
     ) {
 
+        // ==========================================
+        // 1. DEFINIR LA PERIODE COMPLETE
+        // ==========================================
+
+        Instant start = monthStart(
+                firstMonth
+        );
+
+        Instant end = monthStart(
+                firstMonth.plusMonths(months)
+        );
+
+        // ==========================================
+        // 2. UNE SEULE REQUETE POSTGRESQL
+        // ==========================================
+
+        Map<YearMonth, Long> counts =
+                aggregationRepository.createdByMonth(
+                        scope.departmentId(),
+                        scope.categoryCodes(),
+                        start,
+                        end
+                );
+
+        // ==========================================
+        // 3. CONSTRUIRE TOUS LES MOIS
+        // ==========================================
+
         List<MonthlyTicketMetric> result =
                 new ArrayList<>();
 
         for (int i = 0; i < months; i++) {
 
-            YearMonth month = firstMonth.plusMonths(i);
+            YearMonth month =
+                    firstMonth.plusMonths(i);
 
-            Instant start = monthStart(month);
-            Instant end = monthStart(
-                    month.plusMonths(1)
-            );
+            // Si PostgreSQL ne retourne pas ce mois,
+            // cela signifie qu'aucun ticket n'a été créé.
+            long count =
+                    counts.getOrDefault(
+                            month,
+                            0L
+                    );
 
-            long count = countTickets(
-                    scope,
-                    start,
-                    end,
-                    CountKind.ALL
-            );
+            // ======================================
+            // 4. APPLIQUER LE MASQUAGE
+            // ======================================
+
+            boolean suppressed =
+                    count > 0 && count < MIN_GROUP_SIZE;
 
             MonthlyTicketMetric metric =
                     new MonthlyTicketMetric();
@@ -332,11 +372,10 @@ public class DashboardAnalyticsService {
                     month.toString()
             );
 
-            // Masquer les petits groupes non nuls.
-            boolean suppressed =
-                    count > 0 && count < MIN_GROUP_SIZE;
+            metric.setSuppressed(
+                    suppressed
+            );
 
-            metric.setSuppressed(suppressed);
             metric.setCount(
                     suppressed ? null : count
             );

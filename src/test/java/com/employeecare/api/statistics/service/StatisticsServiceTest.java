@@ -5,8 +5,8 @@ import com.employeecare.api.generated.models.DashboardCount;
 import com.employeecare.api.generated.models.DashboardSummary;
 import com.employeecare.api.responsable.entity.ResponsableAccount;
 import com.employeecare.api.responsable.repository.ResponsableAccountRepository;
+import com.employeecare.api.statistics.repository.DashboardAggregationRepository;
 import com.employeecare.api.ticket.entity.TicketStatus;
-import com.employeecare.api.ticket.repository.TicketEventRepository;
 import com.employeecare.api.ticket.repository.TicketRepository;
 import com.employeecare.api.user.entity.AccountStatus;
 import com.employeecare.api.user.entity.AppUser;
@@ -21,7 +21,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -38,7 +37,7 @@ class StatisticsServiceTest {
     private TicketRepository ticketRepository;
 
     @Mock
-    private TicketEventRepository eventRepository;
+    private DashboardAggregationRepository aggregationRepository;
 
     @Mock
     private ResponsableAccountRepository responsableRepository;
@@ -50,7 +49,7 @@ class StatisticsServiceTest {
     private StatisticsService statisticsService;
 
     @Test
-    @DisplayName("getAdminDashboardStats - Calcule le total, la répartition par statut/catégorie et les délais moyens")
+    @DisplayName("getAdminDashboardStats - Calcule le total, la répartition par statut/catégorie et récupère les délais PostgreSQL")
     void getAdminDashboardStats_whenValidAdmin_shouldReturnSummary() {
         UUID adminId = UUID.randomUUID();
         Role adminRole = new Role();
@@ -70,13 +69,8 @@ class StatisticsServiceTest {
                 new Object[]{"TECHNIQUE", 4L},
                 new Object[]{"ADMINISTRATIF", 1L}
         ));
-        when(eventRepository.findDashboardDurationsAdmin("PRISE_EN_CHARGE")).thenReturn(List.<Object[]>of(
-                new Object[]{
-                        Instant.parse("2026-11-09T08:00:00Z"),
-                        Instant.parse("2026-11-09T10:30:00Z")
-                }
-        ));
-        when(eventRepository.findDashboardDurationsAdmin("CLOTURE_SIGNALEMENT")).thenReturn(List.of());
+        when(aggregationRepository.averageDurations(null, Set.of()))
+                .thenReturn(new DashboardAggregationRepository.Delays(2.5, null));
 
         DashboardSummary summary = statisticsService.getAdminDashboardStats(adminId);
 
@@ -123,10 +117,8 @@ class StatisticsServiceTest {
         when(ticketRepository.countDashboardByCategoryResponsable(departmentId, categories)).thenReturn(List.<Object[]>of(
                 new Object[]{"TECHNIQUE", 4L}
         ));
-        when(eventRepository.findDashboardDurationsResponsable("PRISE_EN_CHARGE", departmentId, categories))
-                .thenReturn(List.of());
-        when(eventRepository.findDashboardDurationsResponsable("CLOTURE_SIGNALEMENT", departmentId, categories))
-                .thenReturn(List.of());
+        when(aggregationRepository.averageDurations(departmentId, categories))
+                .thenReturn(new DashboardAggregationRepository.Delays(1.75, 12.0));
         when(ticketRepository.countDashboardAssignedToResponsable(responsableId, departmentId, categories))
                 .thenReturn(3L);
 
@@ -135,6 +127,8 @@ class StatisticsServiceTest {
         assertThat(summary.getScope()).isEqualTo("RESPONSABLE");
         assertThat(summary.getTotalTickets()).isEqualTo(4L);
         assertThat(summary.getAssignedToMe()).isEqualTo(3L);
+        assertThat(summary.getAverageTakeChargeHours()).isEqualTo(1.75);
+        assertThat(summary.getAverageClosureHours()).isEqualTo(12.0);
     }
 
     @Test
